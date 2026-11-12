@@ -39,5 +39,3 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
   console.log('PASS: mobile 390px, composition SVG export, browser autosave recovery, two distinct logo sizes, zero page errors');
  }finally{await b.close();}
 })().catch(e=>{console.error('FAIL',e.stack);process.exitCode=1});
-
-[executed on device: DESKTOP-9EDS6SF (4ebdfe78-43cc-4438-8ff9-e35bda3b4ac1)]
