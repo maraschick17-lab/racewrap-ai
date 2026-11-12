@@ -74,6 +74,7 @@
     return {data:cv.toDataURL('image/png'),width:cv.width,height:cv.height,pages:doc.numPages};
   }
   function refresh() {
+    $('logoGraphic').style.width=$('logoSize').value+'%';
     const ready=!!state.source;
     $('graphic').textContent=$('number').value.trim()||'17';
     $('graphic').style.color=$('accent').value;
