@@ -268,9 +268,35 @@
     layer.innerHTML='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 550" preserveAspectRatio="none" width="100%" height="100%">'+clipped+'</svg>';
     layer.style.opacity=String(Number($('patternOpacity').value)/100);
   }
+  // Reject crossed, repeated or effectively zero-area traced polygons.
+  // Coordinates are normalized to the source image; this validates a concept
+  // mask only and does not verify physical panel geometry or print fitment.
+  function polygonIssue(points) {
+    if(!Array.isArray(points)||points.length<3)return 'Add at least three corners';
+    if(points.some(p=>!Array.isArray(p)||p.length!==2||p.some(v=>!Number.isFinite(v)||v<0||v>1)))return 'Corners must stay on the template';
+    const width=Math.max(1,state.width),height=Math.max(1,state.height);
+    const xy=points.map(([x,y])=>[x*width,y*height]);
+    const cross=(a,b,c)=>(b[0]-a[0])*(c[1]-a[1])-(b[1]-a[1])*(c[0]-a[0]);
+    const near=(a,b)=>Math.hypot(a[0]-b[0],a[1]-b[1])<1;
+    for(let i=0;i<xy.length;i++)if(near(xy[i],xy[(i+1)%xy.length]))return 'Adjacent corners are too close';
+    const onSegment=(a,b,p)=>Math.abs(cross(a,b,p))<0.01&&p[0]>=Math.min(a[0],b[0])-.01&&p[0]<=Math.max(a[0],b[0])+.01&&p[1]>=Math.min(a[1],b[1])-.01&&p[1]<=Math.max(a[1],b[1])+.01;
+    const intersects=(a,b,c,d)=>{
+      const o1=cross(a,b,c),o2=cross(a,b,d),o3=cross(c,d,a),o4=cross(c,d,b);
+      return ((o1>0&&o2<0||o1<0&&o2>0)&&(o3>0&&o4<0||o3<0&&o4>0))||
+        onSegment(a,b,c)||onSegment(a,b,d)||onSegment(c,d,a)||onSegment(c,d,b);
+    };
+    for(let i=0;i<xy.length;i++)for(let j=i+1;j<xy.length;j++){
+      if(j===i+1||(i===0&&j===xy.length-1))continue;
+      if(intersects(xy[i],xy[(i+1)%xy.length],xy[j],xy[(j+1)%xy.length]))return 'Polygon edges cross or overlap';
+    }
+    let twiceArea=0;
+    for(let i=0;i<xy.length;i++){const a=xy[i],b=xy[(i+1)%xy.length];twiceArea+=a[0]*b[1]-b[0]*a[1];}
+    if(Math.abs(twiceArea)<8)return 'Polygon area is too small';
+    return '';
+  }
   function drawPanelOverlay() {
     const el=$('panelOverlay'), points=p=>p.map(([x,y])=>(x*1000).toFixed(2)+','+(y*550).toFixed(2)).join(' ');
-    let svg=panelMasks.map(p=>'<polygon points="'+points(p)+'" fill="#ff533d" fill-opacity=".10" stroke="#ff533d" stroke-width="2" stroke-dasharray="8 5"/>').join('');
+    let svg=panelMasks.map(p=>'<polygon points="'+points(p)+'" fill="#ff533d" fill-opacity=".10" stroke="'+(polygonIssue(p)?'#ffb020':'#ff533d')+'" stroke-width="2" stroke-dasharray="8 5"/>').join('');
     if(draftPanel.length) {
       svg+='<polyline points="'+points(draftPanel)+'" fill="none" stroke="#00b8ff" stroke-width="3"/>';
       svg+=draftPanel.map(([x,y])=>'<circle cx="'+(x*1000).toFixed(2)+'" cy="'+(y*550).toFixed(2)+'" r="6" fill="#00b8ff"/>').join('');
@@ -281,10 +307,11 @@
     el.style.pointerEvents=tracingPanel?'all':'none';
     el.style.zIndex=tracingPanel?'10':'1';
     $('tracePanel').textContent=tracingPanel?'Cancel tracing':'Trace panel';
-    $('finishPanel').disabled=draftPanel.length<3;
+    const draftIssue=draftPanel.length>=3?polygonIssue(draftPanel):'';
+    $('finishPanel').disabled=draftPanel.length<3||!!draftIssue;
     $('undoPoint').disabled=!draftPanel.length;
     $('clearPanels').disabled=!panelMasks.length&&!draftPanel.length;
-    $('panelStatus').textContent=tracingPanel?'Tracing: '+draftPanel.length+' point(s). Click panel corners; finish with at least 3.':panelMasks.length?panelMasks.length+' artwork mask(s) active. Pattern is clipped to traced regions.':'No artwork masks. Pattern covers the full template.';
+    $('panelStatus').textContent=tracingPanel?(draftIssue?'Fix panel: '+draftIssue+'. Undo a point or cancel tracing.':'Tracing: '+draftPanel.length+' point(s). Click panel corners; finish with at least 3.'):panelMasks.length?panelMasks.length+' artwork mask(s) active. Pattern is clipped to traced regions.':'No artwork masks. Pattern covers the full template.';
   }
   function updatePanelMeasurements() {
     const container=$('panelDimensions');
@@ -293,6 +320,7 @@
     const scale=Number($('px').value)/Number($('inch').value);
     const calibrated=rulerPoints.length===2 && Number.isFinite(scale) && scale>0;
     panelMasks.forEach((points,i)=>{
+      const issue=polygonIssue(points);
       const row=document.createElement('div');
       row.style.cssText='border-top:1px solid #42536a;padding:9px 0;font-size:12px;color:#cbd5e1';
       const xs=points.map(p=>p[0]),ys=points.map(p=>p[1]);
@@ -302,18 +330,18 @@
       for(let j=0;j<points.length;j++){const a=points[j],b=points[(j+1)%points.length];area+=a[0]*b[1]-b[0]*a[1];}
       area=Math.abs(area)*state.width*state.height/2;
       const label=(panelNames[i]||'Panel '+(i+1)).slice(0,50);
-      row.textContent=label+' · '+points.length+' corners · '+(calibrated?('approx '+(w/scale).toFixed(1)+' × '+(h/scale).toFixed(1)+' in bounding box, '+(area/(scale*scale)).toFixed(1)+' in² traced area'):'use the two-point ruler for approximate dimensions');
+      row.textContent=label+' · '+points.length+' corners · '+(issue?'INVALID GEOMETRY: '+issue:calibrated?('approx '+(w/scale).toFixed(1)+' × '+(h/scale).toFixed(1)+' in bounding box, '+(area/(scale*scale)).toFixed(1)+' in² traced area'):'use the two-point ruler for approximate dimensions');
       container.appendChild(row);
     });
     if(!panelMasks.length)container.textContent='Trace a panel to see its approximate measured bounds.';
-    $('exportPanelReport').disabled=!calibrated||!panelMasks.length;
+    $('exportPanelReport').disabled=!calibrated||!panelMasks.length||panelMasks.some(p=>!!polygonIssue(p));
   }
   // Reference-only measurements. The user supplies a known span on the source image;
   // raster perspective, bleed, curves and real-world panel geometry are NOT solved here.
   function exportPanelReference() {
     const scale=Number($('px').value)/Number($('inch').value);
-    if(!state.source||rulerPoints.length!==2||!Number.isFinite(scale)||scale<=0||!panelMasks.length) {
-      status('Trace a panel and calibrate the two-point reference ruler before exporting approximate dimensions.');
+    if(!state.source||rulerPoints.length!==2||!Number.isFinite(scale)||scale<=0||!panelMasks.length||panelMasks.some(p=>!!polygonIssue(p))) {
+      status('Trace valid non-crossing panels and calibrate the two-point ruler before exporting approximate dimensions.');
       return;
     }
     const csvCell=value=>{
@@ -960,7 +988,8 @@
     tracingPanel=!tracingPanel;draftPanel=[];if(tracingPanel){patternMoveMode=null;patternPointer=null;updatePatternMoveUI();measuringSpan=false;drawRuler();}drawPanelOverlay();
   });
   $('finishPanel').addEventListener('click',()=>{
-    if(draftPanel.length<3)return;
+    const issue=polygonIssue(draftPanel);
+    if(issue){status('Panel rejected: '+issue+'. Undo a point and retrace.');return;}
     panelMasks.push(draftPanel);
     panelNames.push($('panelName').value.trim().slice(0,50)||'Panel '+panelMasks.length);
     $('panelName').value='';
