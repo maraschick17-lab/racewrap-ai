@@ -591,7 +591,7 @@
   }
   function enableDrop(target,input,handler) {
     target.addEventListener('click',e=>{if(e.target!==input)input.click();});
-    target.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();input.click();}});
+    target.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '||e.key==='Spacebar'||e.code==='Space'||e.keyCode===32){e.preventDefault();input.click();}});
     for(const type of ['dragenter','dragover'])target.addEventListener(type,e=>{e.preventDefault();target.style.borderColor='#ff533d';});
     for(const type of ['dragleave','drop'])target.addEventListener(type,e=>{e.preventDefault();target.style.borderColor='#647c99';});
     target.addEventListener('drop',e=>{const files=Array.from(e.dataTransfer.files);if(files.length)handler(files);});
