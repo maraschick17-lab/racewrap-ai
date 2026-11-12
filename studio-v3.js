@@ -287,6 +287,37 @@
       container.appendChild(row);
     });
     if(!panelMasks.length)container.textContent='Trace a panel to see its approximate measured bounds.';
+    $('exportPanelReport').disabled=!calibrated||!panelMasks.length;
+  }
+  // Reference-only measurements. The user supplies a known span on the source image;
+  // raster perspective, bleed, curves and real-world panel geometry are NOT solved here.
+  function exportPanelReference() {
+    const scale=Number($('px').value)/Number($('inch').value);
+    if(!state.source||rulerPoints.length!==2||!Number.isFinite(scale)||scale<=0||!panelMasks.length) {
+      status('Trace a panel and calibrate the two-point reference ruler before exporting approximate dimensions.');
+      return;
+    }
+    const csvCell=value=>{
+      const raw=String(value??'');
+      // Excel and other spreadsheet programs may execute untrusted cell formulas.
+      const guarded=/^\\s*[=+\\-@]/.test(raw)?"'"+raw:raw;
+      return '"'+guarded.replace(/"/g,'""')+'"';
+    };
+    const lines=[['Panel','Vertices','Approx bounding width (in)','Approx bounding height (in)','Approx traced area (sq in)','Source image','Fitment status']];
+    for(let i=0;i<panelMasks.length;i++){
+      const points=panelMasks[i],xs=points.map(p=>p[0]),ys=points.map(p=>p[1]);
+      const width=(Math.max(...xs)-Math.min(...xs))*state.width/scale;
+      const height=(Math.max(...ys)-Math.min(...ys))*state.height/scale;
+      let twiceArea=0;
+      for(let k=0;k<points.length;k++){
+        const a=points[k],b=points[(k+1)%points.length];
+        twiceArea+=a[0]*b[1]-b[0]*a[1];
+      }
+      const area=Math.abs(twiceArea)*state.width*state.height/(2*scale*scale);
+      lines.push([panelNames[i]||'Panel '+(i+1),points.length,width.toFixed(1),height.toFixed(1),area.toFixed(1),state.sourceName,'UNVERIFIED RASTER REFERENCE - NOT PRINT READY']);
+    }
+    download(lines.map(row=>row.map(csvCell).join(',')).join('\\r\\n')+'\\r\\n','racewrap-panel-reference.csv','text/csv;charset=utf-8');
+    status('Approximate panel reference CSV downloaded for '+panelMasks.length+' traced panel(s). These are not cut dimensions or print-ready measurements.');
   }
   function drawRuler() {
     const el=$('rulerOverlay'), coords=([x,y])=>[(x*1000).toFixed(2),(y*550).toFixed(2)];
@@ -943,6 +974,7 @@
   $('surprise').addEventListener('click',()=>{$('prompt').value='Blue and silver dirt late model number 21 with bold lightning graphics';generate();});
   $('save').addEventListener('click',exportSVG);
   $('savePNG').addEventListener('click',exportPNG);
+  $('exportPanelReport').addEventListener('click',exportPanelReference);
   $('saveProject').addEventListener('click',saveProject);
   $('shareProject').addEventListener('click',shareProject);
   $('restorePrevious').addEventListener('click',async()=>{
