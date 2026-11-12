@@ -1,8 +1,9 @@
 # RaceWrap AI engineering status
 
-Last verified: 2026-11-12 08:50 CST, mobile canvas scroll-lock regression (14 standard suites passed). Zero new spending. Render service: `srv-dbqgfa142hec73d2ejp0`, workspace `tea-dbpmpf59fdbs73fcqh10`. Live: https://racewrap-ai-studio.onrender.com
+Last verified: 2026-11-12 09:55 CST, original Late Model visual concept integrated into car-first homepage and one-click imported into existing editor; desktop 1280px and mobile 390px Chrome browser regression passed, zero browser page errors. Zero new spending. Render service: `srv-dbqgfa142hec73d2ejp0`, workspace `tea-dbpmpf59fdbs73fcqh10`. Live: https://racewrap-ai-studio.onrender.com
 
 ## Active app
+- **Car-first start (2026-11-12):** Homepage now displays an original AI-rendered white Late Model concept (embedded WebP in `racecar-starter.js`), not a traced MD3 manufacturer template or the rejected hand-drawn silhouette. `Start designing this car` explicitly imports it into the active `studio-v3.js` editor using the existing template pipeline. No automatic import on page load, preserving user drafts. Modified and Stock Car are visibly disabled until original, credible artwork exists. This is **raster visual concept artwork, 450×130 pixels, not measured panel geometry or print-ready**. Next replace this lightweight starter with a higher-resolution original car image and licensed/measured panel vectors. `tests/browser-starter.cjs` covers desktop/mobile and image-to-editor import; remote Chrome on DESKTOP-9EDS6SF passed at 1280px and 390px. Render commit `c4a93de` confirmed live; later test/status commits may redeploy.
 - `index.html` loads **`studio-v3.js`** with a version query. `studio-v2.js` is historical; do not edit it expecting the live UI to change. Bump the script query/version when updating the active JS to avoid stale edge/browser caching.
 - Browser-only static application; no paid API, no server-side processing, no checkout.
 - Imports licensed SVG/PNG/JPG/WebP and PDF page 1 as rasterized concept background. Five Star MD3 is a **linked manufacturer reference only**, not bundled or licensed for commercial reuse.
