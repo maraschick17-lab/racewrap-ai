@@ -349,6 +349,21 @@
     const pattern=words.includes('lightning')?'lightning':words.includes('checker')?'checker':words.includes('chevron')?'chevrons':words.includes('ribbon')||words.includes('wave')?'ribbons':words.includes('burst')||words.includes('sunray')?'burst':words.includes('stripe')||words.includes('slash')?'slashes':null;
     return {base:colors[0]&&colors[0][1],accent:colors[1]&&colors[1][1]||colors[0]&&colors[0][1],trim:colors[2]&&colors[2][1],number:number&&number[1],pattern};
   }
+  // The small local model can return free-form design cues. Map its actual
+  // response to one of our procedural patterns; this mapping is deterministic.
+  function patternFromAICue(raw) {
+    const cue=String(raw||'').toLowerCase().slice(0,160);
+    const patterns=[
+      ['lightning',/\b(lightning|electric|bolt|thunder)\b/],
+      ['checker',/\b(checker|checkered|flag|grid)\b/],
+      ['ribbons',/\b(ribbons?|rhythm|flow|waves?|swoosh|motion)\b/],
+      ['slashes',/\b(slashes?|speed|streak|stripes?|fast)\b/],
+      ['burst',/\b(burst|energy|explosion|sunburst|rays?)\b/],
+      ['chevrons',/\b(chevrons?|angular|geometric|zigzag)\b/],
+      ['none',/\b(none|minimal|plain|clean)\b/]
+    ];
+    return patterns.find(([,re])=>re.test(cue))?.[0]||null;
+  }
   function applyDesign(design) {
     for(const field of ['base','accent','trim'])if(/^#[0-9a-f]{6}$/i.test(design[field]||''))$(field).value=design[field];
     if(design.number)$('number').value=String(design.number).replace(/[^a-zA-Z0-9]/g,'').slice(0,4);
@@ -502,10 +517,10 @@
           temperature:0.1,max_tokens:24
         });
         const modelText=response.choices?.[0]?.message?.content||'';
-        const matched=modelText.toLowerCase().match(/\b(lightning|checker|ribbons|slashes|burst|chevrons|none)\b/);
-        if(matched) {
-          applyDesign({...parsePrompt(prompt),pattern:matched[1]});
-          usedAI=true;mode='Local WebGPU AI pattern suggestion + rule-based palette';
+        const suggested=patternFromAICue(modelText);
+        if(suggested) {
+          applyDesign({...parsePrompt(prompt),pattern:suggested});
+          usedAI=true;mode='Local AI concept cue mapped to procedural pattern; rule-based palette';
         } else console.warn('Local AI pattern response unusable; applying labeled rule-based fallback',modelText.slice(0,120));
       } else {
         const api=window.LanguageModel;
@@ -516,8 +531,8 @@
             const session=await api.create({temperature:0.3,topK:3});
             try {
               const answer=await session.prompt(instruction);
-              const suggestion=String(answer||'').toLowerCase().match(/\b(lightning|checker|ribbons|slashes|burst|chevrons|none)\b/);
-              if(suggestion){applyDesign({...parsePrompt(prompt),pattern:suggestion[1]});usedAI=true;mode='Built-in browser AI pattern suggestion + rule-based palette';}
+              const suggestion=patternFromAICue(answer);
+              if(suggestion){applyDesign({...parsePrompt(prompt),pattern:suggestion});usedAI=true;mode='Built-in AI cue mapped to procedural pattern; rule-based palette';}
             } finally {session.destroy&&session.destroy();}
           }
         }
