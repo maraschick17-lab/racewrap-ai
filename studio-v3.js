@@ -494,12 +494,13 @@
     $('generate').disabled=true;
     try {
       let usedAI=false, mode='';
-      const instruction='You are a racecar wrap design assistant. Return ONLY a JSON object with keys base, accent, trim (hex RGB colors), number (1-4 characters), pattern (one of none, slashes, chevrons, lightning, checker, ribbons, burst), patternAngle (degrees -75 to 75), patternScale (percent 50 to 180), patternOpacity (percent 5 to 95), patternX (horizontal position 0 to 100), patternY (vertical position 0 to 100). Make a cohesive racecar composition with balanced visual weight and legible sponsor logos. No other text. User request: '+prompt;
+      const instruction='Choose a bold, legible dirt-racecar wrap color palette and graphic pattern for: '+prompt+'. Output base, accent and trim as #RRGGBB hex strings, number as a short string, and pattern as one of slashes, lightning, chevrons, checker, ribbons, burst, none.';
       if(webLLMEngine) {
         status('Generating with locally loaded WebGPU AI…');
         const response=await webLLMEngine.chat.completions.create({
-          messages:[{role:'system',content:'Return only a compact JSON object describing racecar wrap styling.'},{role:'user',content:instruction}],
-          temperature:0.2,max_tokens:220
+          messages:[{role:'system',content:'You are a racecar wrap stylist. Return valid JSON only.'},{role:'user',content:instruction}],
+          response_format:{type:'json_object',schema:JSON.stringify({type:'object',properties:{base:{type:'string'},accent:{type:'string'},trim:{type:'string'},number:{type:'string'},pattern:{type:'string',enum:['none','slashes','chevrons','lightning','checker','ribbons','burst']}},required:['base','accent','trim','number','pattern'],additionalProperties:false})},
+          temperature:0.2,max_tokens:160
         });
         const modelText=response.choices?.[0]?.message?.content||'';
         usedAI=parseModelDesign(modelText);
