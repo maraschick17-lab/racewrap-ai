@@ -18,6 +18,7 @@
   let rulerPoints = [], measuringSpan = false;
   let webLLMEngine = null, webLLMModel = '';
   let draftTimer = null;
+  let layoutAnchor = null, layoutChoice = 0;
   const DRAFT_DB = 'racewrap-concept-drafts';
   function openDraftDB() {
     return new Promise((resolve,reject)=>{
@@ -345,6 +346,51 @@
     }
     refresh();
   }
+  // These are deterministic layout comparisons of the current controls, not AI-generated artwork.
+  const layoutKeys=['pattern','patternAngle','patternScale','patternOpacity','patternX','patternY'];
+  function currentLayout() {
+    return Object.fromEntries(layoutKeys.map(key=>[key,$(key).value]));
+  }
+  function updateLayoutButtons() {
+    for(let i=0;i<3;i++) {
+      const button=$('layout'+i);
+      button.disabled=!layoutAnchor;
+      button.setAttribute('aria-pressed',String(!!layoutAnchor&&layoutChoice===i));
+      button.style.outline=layoutAnchor&&layoutChoice===i?'2px solid #ff806f':'';
+    }
+    $('layoutRebase').disabled=!state.source;
+    $('layoutStatus').textContent=layoutAnchor?'Compare original styling with two procedural layout variations. Sponsor positions, numbers and colors are preserved.':'Create a design or capture current controls to compare layouts.';
+  }
+  function captureLayout() {
+    if(!state.source){status('Import a template before comparing layouts.');return;}
+    layoutAnchor=currentLayout();layoutChoice=0;updateLayoutButtons();
+    status('Captured current styling. Compare three layouts without moving sponsor logos.');
+    scheduleAutosave();
+  }
+  function chooseLayout(index) {
+    if(!layoutAnchor||index<0||index>2)return;
+    const a=layoutAnchor;
+    const num=(key,fallback)=>Number.isFinite(Number(a[key]))?Number(a[key]):fallback;
+    let design={...a};
+    if(index===1)design={
+      ...a,pattern:a.pattern==='ribbons'?'lightning':'ribbons',
+      patternAngle:clamp(num('patternAngle',0)+25,-75,75),
+      patternScale:clamp(num('patternScale',100)*1.2,50,180),
+      patternOpacity:clamp(num('patternOpacity',45)+12,5,95),
+      patternX:clamp(num('patternX',35)+18,0,100),
+      patternY:clamp(num('patternY',50)-10,0,100)
+    };
+    if(index===2)design={
+      ...a,pattern:a.pattern==='chevrons'?'checker':'chevrons',
+      patternAngle:clamp(num('patternAngle',0)-20,-75,75),
+      patternScale:clamp(num('patternScale',100)*0.8,50,180),
+      patternOpacity:clamp(num('patternOpacity',45)-10,5,95),
+      patternX:clamp(num('patternX',35)-18,0,100),
+      patternY:clamp(num('patternY',50)+10,0,100)
+    };
+    layoutChoice=index;applyDesign(design);updateLayoutButtons();
+    status(['Original layout restored.','Flowing layout applied.','Compact layout applied.'][index]+' Procedural variation; not AI image generation.');
+  }
   async function enableLocalAI() {
     if(!navigator.gpu){$('aiStatus').textContent='WebGPU is unavailable. The rule-based editor still works.';return;}
     $('enableAI').disabled=true;
@@ -415,10 +461,13 @@
       }
       if(!usedAI)applyDesign(parsePrompt(prompt));
       state.ai=usedAI;
+      if(state.source){layoutAnchor=currentLayout();layoutChoice=0;updateLayoutButtons();}
       $('styleLabel').textContent=usedAI?mode:'Rule-based concept';
       status(usedAI?mode+' applied. Review before saving.':'Rule-based design applied. No usable AI response was available.');
     } catch(err) {
-      applyDesign(parsePrompt(prompt));state.ai=false;$('styleLabel').textContent='Rule-based concept';
+      applyDesign(parsePrompt(prompt));state.ai=false;
+      if(state.source){layoutAnchor=currentLayout();layoutChoice=0;updateLayoutButtons();}
+      $('styleLabel').textContent='Rule-based concept';
       status('AI generation failed ('+err.message+'). Rule-based design applied.');
     } finally {$('generate').disabled=false;}
   }
@@ -459,7 +508,7 @@
     for(const id of ['prompt','body','number','base','accent','trim','sponsor','px','inch','pattern','patternOpacity','patternAngle','patternScale','patternX','patternY','logoSize'])fields[id]=$(id).value;
     const positions={};
     for(const el of overlays)positions[el.id]={left:el.style.left,top:el.style.top,width:el.style.width,zIndex:el.style.zIndex};
-    return {version:2,fields,positions,template:{data:state.source,name:state.sourceName,type:state.sourceType,width:state.width,height:state.height},logo:{data:state.logo,name:state.logoName,type:state.logoType},extraLogos:extraLogos.map(item=>({data:item.data,name:item.name,type:item.type,left:item.el.style.left,top:item.el.style.top,width:item.el.style.width,zIndex:item.el.style.zIndex})),panelMasks:panelMasks.map(p=>p.map(([x,y])=>[x,y])),panelNames:panelNames.slice(),rulerPoints:rulerPoints.map(([x,y])=>[x,y])};
+    return {version:2,fields,positions,layoutComparison:layoutAnchor?{anchor:layoutAnchor,choice:layoutChoice}:null,template:{data:state.source,name:state.sourceName,type:state.sourceType,width:state.width,height:state.height},logo:{data:state.logo,name:state.logoName,type:state.logoType},extraLogos:extraLogos.map(item=>({data:item.data,name:item.name,type:item.type,left:item.el.style.left,top:item.el.style.top,width:item.el.style.width,zIndex:item.el.style.zIndex})),panelMasks:panelMasks.map(p=>p.map(([x,y])=>[x,y])),panelNames:panelNames.slice(),rulerPoints:rulerPoints.map(([x,y])=>[x,y])};
   }
   function saveProject() {
     if(!state.source){status('Import a template before saving a project.');return;}
@@ -495,7 +544,14 @@
         if(Array.isArray(p)&&p.length>=3&&p.length<=60&&p.every(point=>Array.isArray(point)&&point.length===2&&point.every(v=>typeof v==='number'&&Number.isFinite(v)&&v>=0&&v<=1))){panelMasks.push(p);const name=Array.isArray(obj.panelNames)?obj.panelNames[panelNames.length]:'';panelNames.push(typeof name==='string'&&name.trim()?name.trim().slice(0,50):'Panel '+panelMasks.length);}
       }
       if(Array.isArray(obj.rulerPoints)&&obj.rulerPoints.length===2&&obj.rulerPoints.every(p=>Array.isArray(p)&&p.length===2&&p.every(n=>typeof n==='number'&&Number.isFinite(n)&&n>=0&&n<=1)))rulerPoints=obj.rulerPoints.map(p=>p.slice());
-      refresh();selectLogo(0);status('Editable project restored with '+logoItems().length+' sponsor logo(s).');
+      layoutAnchor=null;layoutChoice=0;
+      const comparison=obj.layoutComparison;
+      if(comparison&&comparison.anchor&&typeof comparison.anchor==='object'&&
+        layoutKeys.every(k=>typeof comparison.anchor[k]==='string'&&comparison.anchor[k].length<30)) {
+        layoutAnchor=Object.fromEntries(layoutKeys.map(k=>[k,comparison.anchor[k]]));
+        layoutChoice=[0,1,2].includes(comparison.choice)?comparison.choice:0;
+      }
+      updateLayoutButtons();refresh();selectLogo(0);status('Editable project restored with '+logoItems().length+' sponsor logo(s).');
     } catch(err){status('Project load failed: '+err.message);}
   }
   $('rulerOverlay').addEventListener('pointerdown',e=>{
@@ -572,6 +628,8 @@
   $('undoPoint').addEventListener('click',()=>{draftPanel.pop();drawPanelOverlay();});
   $('clearPanels').addEventListener('click',()=>{panelMasks.length=0;panelNames.length=0;draftPanel=[];drawPattern();drawPanelOverlay();scheduleAutosave();});
   $('enableAI').addEventListener('click',enableLocalAI);
+  $('layoutRebase').addEventListener('click',captureLayout);
+  for(let i=0;i<3;i++)$('layout'+i).addEventListener('click',()=>chooseLayout(i));
   $('generate').addEventListener('click',generate);
   $('surprise').addEventListener('click',()=>{$('prompt').value='Blue and silver dirt late model number 21 with bold lightning graphics';generate();});
   $('save').addEventListener('click',exportSVG);
@@ -613,5 +671,5 @@
   });
   checkDraft();
   $('aiStatus').textContent=navigator.gpu?'Optional local WebGPU AI available to download, or use rule-based styling now.':window.LanguageModel?'Built-in browser AI may be available.':'Local WebGPU AI unavailable here; rule-based styling works.';
-  calibrate();refresh();renderLogoList();
+  calibrate();refresh();renderLogoList();updateLayoutButtons();
 })();
