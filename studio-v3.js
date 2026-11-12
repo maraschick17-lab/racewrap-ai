@@ -501,7 +501,9 @@
           messages:[{role:'system',content:'You are a racecar wrap styling planner. Reply with a single valid JSON object and no other text.'},{role:'user',content:instruction}],
           temperature:0.1,max_tokens:360
         });
-        usedAI=parseModelDesign(response.choices?.[0]?.message?.content||'');
+        const modelText=response.choices?.[0]?.message?.content||'';
+        usedAI=parseModelDesign(modelText);
+        if(!usedAI)console.warn('Local model did not produce usable styling JSON', {finishReason:response.choices?.[0]?.finish_reason,preview:modelText.slice(0,400)});
         if(usedAI)mode='Local WebGPU AI design';
       } else {
         const api=window.LanguageModel;
