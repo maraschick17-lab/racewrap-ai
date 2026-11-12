@@ -19,6 +19,7 @@
   let webLLMEngine = null, webLLMModel = '';
   let draftTimer = null;
   let layoutAnchor = null, layoutChoice = 0;
+  let designSlots = [null,null,null];
   const DRAFT_DB = 'racewrap-concept-drafts';
   function openDraftDB() {
     return new Promise((resolve,reject)=>{
@@ -213,6 +214,7 @@
   function setTemplate(result,name,kind) {
     state.source=result.data;state.width=result.width;state.height=result.height;state.sourceName=name;state.sourceType=kind;
     layoutAnchor=null;layoutChoice=0;
+    designSlots=[null,null,null];updateDesignSlots();
     panelMasks.length=0;panelNames.length=0;draftPanel=[];tracingPanel=false;rulerPoints=[];measuringSpan=false;drawRuler();
     image.src=state.source;image.style.display='block';$('empty').style.display='none';
     canvas.style.aspectRatio=state.width+' / '+state.height;canvas.style.minHeight='0';
@@ -346,6 +348,49 @@
       if(design[key]!==undefined && design[key]!==null && design[key]!=='' && Number.isFinite(Number(design[key])))$(key).value=clamp(Number(design[key]),min,max);
     }
     refresh();
+  }
+  // Saved directions are actual captured style controls, not new AI inference.
+  // Sponsor artwork, placement, template and panel geometry remain unchanged.
+  const designSlotKeys=['number','base','accent','trim','pattern','patternAngle','patternScale','patternOpacity','patternX','patternY'];
+  function updateDesignSlots() {
+    const names=['A','B','C'];
+    for(let i=0;i<3;i++){
+      const slot=designSlots[i], load=$('slotLoad'+i), save=$('slotSave'+i);
+      load.disabled=!slot;
+      load.textContent=slot?'View '+names[i]:'Empty '+names[i];
+      save.disabled=!state.source;
+      save.textContent=slot?'Replace '+names[i]:'Save '+names[i];
+    }
+    $('designSlotStatus').textContent=designSlots.filter(Boolean).length+' of 3 design directions saved. Styles only; sponsor placements stay put.';
+  }
+  function captureDesignSlot(index) {
+    if(!state.source){status('Import a licensed template before saving design directions.');return;}
+    designSlots[index]=Object.fromEntries(designSlotKeys.map(key=>[key,$(key).value]));
+    updateDesignSlots();scheduleAutosave();
+    status('Saved design direction '+['A','B','C'][index]+'. This captures controls, not a new AI image.');
+  }
+  function loadDesignSlot(index) {
+    const slot=designSlots[index];
+    if(!state.source||!slot)return;
+    applyDesign(slot);state.ai=false;
+    $('styleLabel').textContent='Saved design direction';
+    layoutAnchor=currentLayout();layoutChoice=0;updateLayoutButtons();
+    status('Restored direction '+['A','B','C'][index]+'. Sponsor artwork and positions unchanged.');
+  }
+  function validatedDesignSlots(raw) {
+    if(!Array.isArray(raw))return [null,null,null];
+    return [0,1,2].map(i=>{
+      const item=raw[i];
+      if(!item||typeof item!=='object'||Array.isArray(item))return null;
+      if(!designSlotKeys.every(key=>typeof item[key]==='string'&&item[key].length<40))return null;
+      if(!['none','slashes','chevrons','lightning','checker','ribbons','burst'].includes(item.pattern))return null;
+      if(!['base','accent','trim'].every(key=>/^#[0-9a-f]{6}$/i.test(item[key])))return null;
+      if(!/^[a-zA-Z0-9]{1,4}$/.test(item.number))return null;
+      for(const [key,min,max] of [['patternAngle',-75,75],['patternScale',50,180],['patternOpacity',5,95],['patternX',0,100],['patternY',0,100]]) {
+        if(!Number.isFinite(Number(item[key]))||Number(item[key])<min||Number(item[key])>max)return null;
+      }
+      return Object.fromEntries(designSlotKeys.map(key=>[key,item[key]]));
+    });
   }
   // These are deterministic layout comparisons of the current controls, not AI-generated artwork.
   const layoutKeys=['pattern','patternAngle','patternScale','patternOpacity','patternX','patternY'];
@@ -509,7 +554,7 @@
     for(const id of ['prompt','body','number','base','accent','trim','sponsor','px','inch','pattern','patternOpacity','patternAngle','patternScale','patternX','patternY','logoSize'])fields[id]=$(id).value;
     const positions={};
     for(const el of overlays)positions[el.id]={left:el.style.left,top:el.style.top,width:el.style.width,zIndex:el.style.zIndex};
-    return {version:2,fields,positions,layoutComparison:layoutAnchor?{anchor:layoutAnchor,choice:layoutChoice}:null,template:{data:state.source,name:state.sourceName,type:state.sourceType,width:state.width,height:state.height},logo:{data:state.logo,name:state.logoName,type:state.logoType},extraLogos:extraLogos.map(item=>({data:item.data,name:item.name,type:item.type,left:item.el.style.left,top:item.el.style.top,width:item.el.style.width,zIndex:item.el.style.zIndex})),panelMasks:panelMasks.map(p=>p.map(([x,y])=>[x,y])),panelNames:panelNames.slice(),rulerPoints:rulerPoints.map(([x,y])=>[x,y])};
+    return {version:2,fields,positions,layoutComparison:layoutAnchor?{anchor:layoutAnchor,choice:layoutChoice}:null,designSlots:designSlots.map(slot=>slot?{...slot}:null),template:{data:state.source,name:state.sourceName,type:state.sourceType,width:state.width,height:state.height},logo:{data:state.logo,name:state.logoName,type:state.logoType},extraLogos:extraLogos.map(item=>({data:item.data,name:item.name,type:item.type,left:item.el.style.left,top:item.el.style.top,width:item.el.style.width,zIndex:item.el.style.zIndex})),panelMasks:panelMasks.map(p=>p.map(([x,y])=>[x,y])),panelNames:panelNames.slice(),rulerPoints:rulerPoints.map(([x,y])=>[x,y])};
   }
   function saveProject() {
     if(!state.source){status('Import a template before saving a project.');return;}
@@ -552,7 +597,8 @@
         layoutAnchor=Object.fromEntries(layoutKeys.map(k=>[k,comparison.anchor[k]]));
         layoutChoice=[0,1,2].includes(comparison.choice)?comparison.choice:0;
       }
-      updateLayoutButtons();refresh();selectLogo(0);status('Editable project restored with '+logoItems().length+' sponsor logo(s).');
+      designSlots=validatedDesignSlots(obj.designSlots);
+      updateDesignSlots();updateLayoutButtons();refresh();selectLogo(0);status('Editable project restored with '+logoItems().length+' sponsor logo(s).');
     } catch(err){status('Project load failed: '+err.message);}
   }
   $('rulerOverlay').addEventListener('pointerdown',e=>{
@@ -630,6 +676,10 @@
   $('clearPanels').addEventListener('click',()=>{panelMasks.length=0;panelNames.length=0;draftPanel=[];drawPattern();drawPanelOverlay();scheduleAutosave();});
   $('enableAI').addEventListener('click',enableLocalAI);
   $('layoutRebase').addEventListener('click',captureLayout);
+  for(let i=0;i<3;i++){
+    $('slotSave'+i).addEventListener('click',()=>captureDesignSlot(i));
+    $('slotLoad'+i).addEventListener('click',()=>loadDesignSlot(i));
+  }
   for(let i=0;i<3;i++)$('layout'+i).addEventListener('click',()=>chooseLayout(i));
   $('generate').addEventListener('click',generate);
   $('surprise').addEventListener('click',()=>{$('prompt').value='Blue and silver dirt late model number 21 with bold lightning graphics';generate();});
@@ -672,5 +722,5 @@
   });
   checkDraft();
   $('aiStatus').textContent=navigator.gpu?'Optional local WebGPU AI available to download, or use rule-based styling now.':window.LanguageModel?'Built-in browser AI may be available.':'Local WebGPU AI unavailable here; rule-based styling works.';
-  calibrate();refresh();renderLogoList();updateLayoutButtons();
+  calibrate();refresh();renderLogoList();updateLayoutButtons();updateDesignSlots();
 })();
