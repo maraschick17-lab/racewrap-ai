@@ -343,7 +343,7 @@
       const label=(panelNames[i]||'Panel '+(i+1)).slice(0,50);
       const reference=calibrated?panelReferenceSize(points,scale):null;
       const description=document.createElement('div');
-      description.textContent=label+' · '+points.length+' corners · '+(issue?'INVALID GEOMETRY: '+issue:reference?('approx '+reference.width.toFixed(1)+' × '+reference.height.toFixed(1)+' in image bounds, '+reference.area.toFixed(1)+' in² traced area'):'calibrate the two-point ruler for approximate image bounds');
+      description.textContent=label+' · '+points.length+' corners · '+(issue?'INVALID GEOMETRY: '+issue:reference?('approx '+reference.width.toFixed(1)+' × '+reference.height.toFixed(1)+' in bounding box (image), '+reference.area.toFixed(1)+' in² traced area'):'calibrate the two-point ruler for approximate image bounds');
       row.appendChild(description);
       const inputs=document.createElement('div');
       inputs.style.cssText='display:flex;gap:10px;flex-wrap:wrap;margin:8px 0';
