@@ -13,6 +13,7 @@
   let selectedLogo = 0, nextLogoId = 1;
   const panelMasks = [];
   let draftPanel = [], tracingPanel = false;
+  let webLLMEngine = null, webLLMModel = '';
   const percent = (value,total) => total ? 100*value/total : 0;
   const clamp = (x,min,max) => Math.min(max,Math.max(min,x));
   const safe = value => String(value).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&apos;');
@@ -234,32 +235,81 @@
     if(['none','slashes','chevrons','lightning','checker'].includes(design.pattern))$('pattern').value=design.pattern;
     refresh();
   }
+  async function enableLocalAI() {
+    if(!navigator.gpu){$('aiStatus').textContent='WebGPU is unavailable. The rule-based editor still works.';return;}
+    $('enableAI').disabled=true;
+    try {
+      $('aiStatus').textContent='Checking graphics hardware and loading the local AI library…';
+      const adapter=await navigator.gpu.requestAdapter();
+      if(!adapter)throw Error('No usable WebGPU adapter');
+      const webllm=await import('https://esm.run/@mlc-ai/web-llm@0.2.88');
+      const ids=new Set(webllm.prebuiltAppConfig.model_list.map(m=>m.model_id));
+      const preferred=adapter.features.has('shader-f16')?[
+        'SmolLM2-360M-Instruct-q4f16_1-MLC','SmolLM2-135M-Instruct-q0f16-MLC'
+      ]:[
+        'SmolLM2-360M-Instruct-q4f32_1-MLC','SmolLM2-135M-Instruct-q0f32-MLC'
+      ];
+      const model=preferred.find(id=>ids.has(id));
+      if(!model)throw Error('No compatible small model found');
+      $('aiStatus').textContent='Downloading '+model+' to this browser; first load may take several minutes…';
+      const engine=await webllm.CreateMLCEngine(model,{
+        initProgressCallback:p=>{$('aiStatus').textContent='Local AI: '+(p.text||Math.round((p.progress||0)*100)+'%');}
+      });
+      webLLMEngine=engine;webLLMModel=model;
+      $('aiStatus').textContent='Local WebGPU AI ready: '+model+'. Model is cached in this browser.';
+      $('enableAI').textContent='Local AI ready';$('styleLabel').textContent='Local AI available';
+      status('Local AI is loaded. Click Create design to generate a design.');
+    } catch(err) {
+      $('aiStatus').textContent='Local AI unavailable: '+err.message+'. Rule-based design still works.';
+      $('enableAI').disabled=false;$('enableAI').textContent='Retry local AI';
+    }
+  }
+  function parseModelDesign(answer) {
+    const text=typeof answer==='string'?answer:'';
+    const match=text.match(/\{[\s\S]*\}/);
+    if(!match)return false;
+    const result=JSON.parse(match[0]);
+    if(!result||typeof result!=='object'||Array.isArray(result))return false;
+    if(!['base','accent','trim','number','pattern'].some(key=>result[key]))return false;
+    applyDesign(result);return true;
+  }
   async function generate() {
     const prompt=$('prompt').value.trim();
     if(!prompt){status('Describe the design first.');return;}
     $('generate').disabled=true;
     try {
-      let usedAI=false;
-      const api=window.LanguageModel;
-      if(api && typeof api.availability==='function') {
-        const availability=await api.availability();
-        if(availability==='available') {
-          status('Generating with on-device browser AI…');
-          const session=await api.create({temperature:0.3,topK:3});
-          try {
-            const answer=await session.prompt('You are a racecar wrap design assistant. Return ONLY a JSON object with keys base, accent, trim (hex RGB colors), number (1-4 characters), and pattern (one of none, slashes, chevrons, lightning, checker). User request: '+prompt);
-            const match=answer.match(/\{[\s\S]*\}/);
-            if(match){applyDesign(JSON.parse(match[0]));usedAI=true;}
-          } finally {session.destroy&&session.destroy();}
+      let usedAI=false, mode='';
+      const instruction='You are a racecar wrap design assistant. Return ONLY a JSON object with keys base, accent, trim (hex RGB colors), number (1-4 characters), and pattern (one of none, slashes, chevrons, lightning, checker). No other text. User request: '+prompt;
+      if(webLLMEngine) {
+        status('Generating with locally loaded WebGPU AI…');
+        const response=await webLLMEngine.chat.completions.create({
+          messages:[{role:'system',content:'Return only a compact JSON object describing racecar wrap styling.'},{role:'user',content:instruction}],
+          temperature:0.2,max_tokens:180
+        });
+        usedAI=parseModelDesign(response.choices?.[0]?.message?.content||'');
+        if(usedAI)mode='Local WebGPU AI design';
+      } else {
+        const api=window.LanguageModel;
+        if(api && typeof api.availability==='function') {
+          const availability=await api.availability();
+          if(availability==='available') {
+            status('Generating with built-in on-device AI…');
+            const session=await api.create({temperature:0.3,topK:3});
+            try {
+              const answer=await session.prompt(instruction);
+              usedAI=parseModelDesign(answer);
+              if(usedAI)mode='Built-in browser AI design';
+            } finally {session.destroy&&session.destroy();}
+          }
         }
       }
       if(!usedAI)applyDesign(parsePrompt(prompt));
       state.ai=usedAI;
-      $('styleLabel').textContent=usedAI?'On-device AI design':'Rule-based concept';
-      status(usedAI?'On-device AI generated design controls. Review before saving.':'Rule-based design applied. This browser has no available on-device AI model.');
+      $('styleLabel').textContent=usedAI?mode:'Rule-based concept';
+      status(usedAI?mode+' applied. Review before saving.':'Rule-based design applied. No usable AI response was available.');
     } catch(err) {
       applyDesign(parsePrompt(prompt));state.ai=false;$('styleLabel').textContent='Rule-based concept';
-      status('On-device AI unavailable ('+err.message+'). Rule-based design applied.');
+      status('AI generation failed ('+err.message+'). Rule-based design applied.');
     } finally {$('generate').disabled=false;}
   }
   function download(data,name,mime) {
@@ -357,6 +407,7 @@
   });
   $('undoPoint').addEventListener('click',()=>{draftPanel.pop();drawPanelOverlay();});
   $('clearPanels').addEventListener('click',()=>{panelMasks.length=0;draftPanel=[];drawPattern();drawPanelOverlay();});
+  $('enableAI').addEventListener('click',enableLocalAI);
   $('generate').addEventListener('click',generate);
   $('surprise').addEventListener('click',()=>{$('prompt').value='Blue and silver dirt late model number 21 with bold lightning graphics';generate();});
   $('save').addEventListener('click',exportSVG);
@@ -380,6 +431,6 @@
     refresh();selectLogo(Math.min(selectedLogo,logoItems().length-1));
     status('Sponsor logo removed. '+logoItems().length+' remaining.');
   });
-  $('aiStatus').textContent=window.LanguageModel?'On-device AI may be available on this browser':'On-device AI unavailable here; rule-based fallback';
+  $('aiStatus').textContent=navigator.gpu?'Optional local WebGPU AI available to download, or use rule-based styling now.':window.LanguageModel?'Built-in browser AI may be available.':'Local WebGPU AI unavailable here; rule-based styling works.';
   calibrate();refresh();renderLogoList();
 })();
