@@ -1,0 +1,44 @@
+'use strict';
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
+const base=process.env.BASE_URL||'https://racewrap-ai-studio.onrender.com';
+(async()=>{
+ const browser=await chromium.launch({headless:true,executablePath:process.env.CHROME_PATH||undefined,args:['--no-sandbox']});
+ const context=await browser.newContext({viewport:{width:390,height:844},hasTouch:true,isMobile:true,acceptDownloads:true});
+ const page=await context.newPage(),errors=[];
+ page.on('pageerror',e=>errors.push(e.message));
+ try {
+  const response=await page.goto(base+'/?ruler='+Date.now(),{waitUntil:'domcontentloaded'});
+  assert.equal(response.status(),200);
+  await page.waitForFunction(()=>document.querySelector('#rulerOverlay')&&document.querySelector('#measureSpan'));
+  const svg='<svg xmlns="http://www.w3.org/2000/svg" width="800" height="500"><rect width="800" height="500" fill="white"/></svg>';
+  await page.locator('#template').setInputFiles({name:'licensed-ruler.svg',mimeType:'image/svg+xml',buffer:Buffer.from(svg)});
+  await page.waitForFunction(()=>document.querySelector('#sourceMeta').textContent.includes('licensed-ruler'));
+  await page.locator('#inch').fill('20');
+  await page.locator('#measureSpan').click();
+  const box=await page.locator('#rulerOverlay').boundingBox();
+  await page.touchscreen.tap(box.x+box.width*.2,box.y+box.height*.5);
+  await page.touchscreen.tap(box.x+box.width*.7,box.y+box.height*.5);
+  const px=Number(await page.locator('#px').inputValue());
+  assert.ok(Math.abs(px-400)<2,'expected 400 image pixels, got '+px);
+  assert.match(await page.locator('#calibration').textContent(),/20\.000 image px\/in/);
+  assert.match(await page.locator('#rulerStatus').textContent(),/Measured reference/);
+  assert.equal(await page.locator('#rulerOverlay line').count(),1);
+  const [projectDownload]=await Promise.all([page.waitForEvent('download'),page.locator('#saveProject').click()]);
+  const project=JSON.parse(fs.readFileSync(await projectDownload.path(),'utf8'));
+  assert.equal(project.rulerPoints.length,2);
+  assert.equal(project.fields.inch,'20');
+  await page.locator('#clearSpan').click();
+  assert.equal(await page.locator('#rulerOverlay line').count(),0);
+  await page.locator('#openProject').setInputFiles({name:'ruler-project.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(project))});
+  await page.waitForFunction(()=>document.querySelector('#rulerOverlay line')&&document.querySelector('#rulerStatus').textContent.includes('Measured reference'));
+  assert.equal(await page.locator('#rulerOverlay line').count(),1);
+  const [svgDownload]=await Promise.all([page.waitForEvent('download'),page.locator('#save').click()]);
+  const concept=fs.readFileSync(await svgDownload.path(),'utf8');
+  assert.ok(!concept.includes('rulerOverlay'),'reference ruler leaked into concept artwork');
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,'mobile overflow');
+  assert.deepEqual(errors,[],'page JS errors');
+  console.log('PASS touch ruler calibration, saved project round-trip, concept exclusion, mobile layout, zero page errors');
+ } finally {await browser.close();}
+})().catch(e=>{console.error(e);process.exit(1);});
