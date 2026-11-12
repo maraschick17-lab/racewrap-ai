@@ -1,0 +1,47 @@
+'use strict';
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
+const base=process.env.BASE_URL||'https://racewrap-ai-studio.onrender.com';
+(async()=>{
+ const browser=await chromium.launch({headless:true,executablePath:process.env.CHROME_PATH||undefined,args:['--no-sandbox']});
+ const context=await browser.newContext({viewport:{width:390,height:844},acceptDownloads:true,hasTouch:true,isMobile:true});
+ const page=await context.newPage(),errors=[];
+ page.on('pageerror',e=>errors.push(e.message));
+ try{
+  const response=await page.goto(base+'/?secondary='+Date.now(),{waitUntil:'domcontentloaded'});
+  assert.equal(response.status(),200);
+  await page.waitForFunction(()=>!!document.querySelector('#secondaryPattern'));
+  const svg='<svg xmlns="http://www.w3.org/2000/svg" width="800" height="500"><rect width="800" height="500" fill="white"/></svg>';
+  await page.locator('#template').setInputFiles({name:'licensed-fixture.svg',mimeType:'image/svg+xml',buffer:Buffer.from(svg)});
+  await page.waitForFunction(()=>document.querySelector('#sourceMeta').textContent.includes('licensed-fixture'));
+  const set=async(id,value)=>page.locator('#'+id).evaluate((el,v)=>{el.value=v;el.dispatchEvent(new Event('input',{bubbles:true}));},value);
+  await set('pattern','none');
+  await set('secondaryPattern','ribbons');
+  await set('secondaryX','85');await set('secondaryY','25');await set('secondaryOpacity','70');
+  assert.equal(await page.locator('#patternLayer').evaluate(el=>getComputedStyle(el).display),'block','secondary-only visible');
+  assert.equal(await page.locator('#patternLayer').evaluate(el=>el.innerHTML.includes('data-layer="secondary"')),true);
+  const svgDownload=page.waitForEvent('download');
+  await page.locator('#save').click();
+  const exported=fs.readFileSync(await (await svgDownload).path(),'utf8');
+  assert.match(exported,/data-layer="secondary"/);
+  assert.match(exported,/opacity="0.70"/);
+  const projectDownload=page.waitForEvent('download');
+  await page.locator('#saveProject').click();
+  const project=JSON.parse(fs.readFileSync(await (await projectDownload).path(),'utf8'));
+  assert.equal(project.fields.secondaryPattern,'ribbons');
+  assert.equal(project.fields.secondaryX,'85');
+  await set('secondaryPattern','none');
+  await page.locator('#openProject').setInputFiles({name:'project.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(project))});
+  await page.waitForFunction(()=>document.querySelector('#status').textContent.includes('restored'));
+  assert.equal(await page.locator('#secondaryPattern').inputValue(),'ribbons');
+  assert.equal(await page.locator('#secondaryOpacity').inputValue(),'70');
+  await page.locator('#slotSave0').click();
+  await set('secondaryPattern','checker');
+  await page.locator('#slotLoad0').click();
+  assert.equal(await page.locator('#secondaryPattern').inputValue(),'ribbons','slot restores second layer');
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),true,'mobile horizontal overflow');
+  assert.deepEqual(errors,[],'page JS errors');
+  console.log('PASS layered graphics, secondary-only export, JSON roundtrip, saved slot, 390px mobile, zero JS errors');
+ }finally{await browser.close();}
+})().catch(e=>{console.error(e);process.exit(1);});
