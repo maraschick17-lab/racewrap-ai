@@ -15,6 +15,7 @@
   let selectedLogo = 0, nextLogoId = 1;
   const panelMasks = [];
   const panelNames = [];
+  const panelFieldMeasurements = []; // User-entered field observations; never verified cut geometry.
   let draftPanel = [], tracingPanel = false;
   let rulerPoints = [], measuringSpan = false;
   let webLLMEngine = null, webLLMModel = '';
@@ -313,27 +314,70 @@
     $('clearPanels').disabled=!panelMasks.length&&!draftPanel.length;
     $('panelStatus').textContent=tracingPanel?(draftIssue?'Fix panel: '+draftIssue+'. Undo a point or cancel tracing.':'Tracing: '+draftPanel.length+' point(s). Click panel corners; finish with at least 3.'):panelMasks.length?panelMasks.length+' artwork mask(s) active. Pattern is clipped to traced regions.':'No artwork masks. Pattern covers the full template.';
   }
+  function validFieldInches(value) {
+    if(value===null||value===undefined||value==='')return null;
+    const n=Number(value);
+    return Number.isFinite(n)&&n>0&&n<=1000?n:null;
+  }
+  function panelReferenceSize(points,scale) {
+    const xs=points.map(p=>p[0]),ys=points.map(p=>p[1]);
+    const width=(Math.max(...xs)-Math.min(...xs))*state.width/scale;
+    const height=(Math.max(...ys)-Math.min(...ys))*state.height/scale;
+    let twiceArea=0;
+    for(let k=0;k<points.length;k++){
+      const a=points[k],b=points[(k+1)%points.length];
+      twiceArea+=a[0]*b[1]-b[0]*a[1];
+    }
+    return {width,height,area:Math.abs(twiceArea)*state.width*state.height/(2*scale*scale)};
+  }
   function updatePanelMeasurements() {
     const container=$('panelDimensions');
     if(!container)return;
     container.replaceChildren();
     const scale=Number($('px').value)/Number($('inch').value);
-    const calibrated=rulerPoints.length===2 && Number.isFinite(scale) && scale>0;
+    const calibrated=rulerPoints.length===2&&Number.isFinite(scale)&&scale>0;
     panelMasks.forEach((points,i)=>{
       const issue=polygonIssue(points);
       const row=document.createElement('div');
-      row.style.cssText='border-top:1px solid #42536a;padding:9px 0;font-size:12px;color:#cbd5e1';
-      const xs=points.map(p=>p[0]),ys=points.map(p=>p[1]);
-      const w=(Math.max(...xs)-Math.min(...xs))*state.width;
-      const h=(Math.max(...ys)-Math.min(...ys))*state.height;
-      let area=0;
-      for(let j=0;j<points.length;j++){const a=points[j],b=points[(j+1)%points.length];area+=a[0]*b[1]-b[0]*a[1];}
-      area=Math.abs(area)*state.width*state.height/2;
+      row.style.cssText='border-top:1px solid #42536a;padding:10px 0;font-size:12px;color:#cbd5e1';
       const label=(panelNames[i]||'Panel '+(i+1)).slice(0,50);
-      row.textContent=label+' · '+points.length+' corners · '+(issue?'INVALID GEOMETRY: '+issue:calibrated?('approx '+(w/scale).toFixed(1)+' × '+(h/scale).toFixed(1)+' in bounding box, '+(area/(scale*scale)).toFixed(1)+' in² traced area'):'use the two-point ruler for approximate dimensions');
+      const reference=calibrated?panelReferenceSize(points,scale):null;
+      const description=document.createElement('div');
+      description.textContent=label+' · '+points.length+' corners · '+(issue?'INVALID GEOMETRY: '+issue:reference?('approx '+reference.width.toFixed(1)+' × '+reference.height.toFixed(1)+' in image bounds, '+reference.area.toFixed(1)+' in² traced area'):'calibrate the two-point ruler for approximate image bounds');
+      row.appendChild(description);
+      const inputs=document.createElement('div');
+      inputs.style.cssText='display:flex;gap:10px;flex-wrap:wrap;margin:8px 0';
+      const measured=panelFieldMeasurements[i]||{};
+      for(const [axis,title] of [['width','Field width'],['height','Field height']]){
+        const labelEl=document.createElement('label');
+        labelEl.style.cssText='margin:0;flex:1;min-width:105px';
+        labelEl.textContent=title+' (in)';
+        const input=document.createElement('input');
+        input.type='number';input.inputMode='decimal';input.min='0.01';input.max='1000';input.step='any';
+        input.value=validFieldInches(measured[axis])===null?'':String(measured[axis]);
+        input.setAttribute('aria-label',label+' '+title+' in inches');
+        input.addEventListener('input',()=>{
+          const raw=input.value;
+          const entry=panelFieldMeasurements[i]||(panelFieldMeasurements[i]={width:null,height:null});
+          entry[axis]=raw===''?null:validFieldInches(raw);
+          input.setCustomValidity(raw!==''&&entry[axis]===null?'Enter a positive measurement up to 1000 inches.':'');
+          scheduleAutosave();
+        });
+        input.addEventListener('change',updatePanelMeasurements);
+        labelEl.appendChild(input);inputs.appendChild(labelEl);
+      }
+      row.appendChild(inputs);
+      const fieldWidth=validFieldInches(measured.width),fieldHeight=validFieldInches(measured.height);
+      if(fieldWidth!==null||fieldHeight!==null){
+        const delta=(field,estimate)=>field===null||!reference?'n/a':((field/estimate-1)*100).toFixed(1)+'%';
+        const note=document.createElement('div');
+        note.style.color='#e2d5a5';
+        note.textContent='Field observations saved · difference vs flat image bounds: width '+delta(fieldWidth,reference?.width)+', height '+delta(fieldHeight,reference?.height)+'. Perspective, curvature and tape path can explain differences. NOT verified fitment.';
+        row.appendChild(note);
+      }
       container.appendChild(row);
     });
-    if(!panelMasks.length)container.textContent='Trace a panel to see its approximate measured bounds.';
+    if(!panelMasks.length)container.textContent='Trace a panel to enter field measurements and see approximate image bounds.';
     $('exportPanelReport').disabled=!calibrated||!panelMasks.length||panelMasks.some(p=>!!polygonIssue(p));
   }
   // Reference-only measurements. The user supplies a known span on the source image;
@@ -350,18 +394,13 @@
       const guarded=/^\s*[=+\-@]/.test(raw)?"'"+raw:raw;
       return '"'+guarded.replace(/"/g,'""')+'"';
     };
-    const lines=[['Panel','Vertices','Approx bounding width (in)','Approx bounding height (in)','Approx traced area (sq in)','Source image','Fitment status']];
+    const lines=[['Panel','Vertices','Approx bounding width (in)','Approx bounding height (in)','Approx traced area (sq in)','Field width observed (in)','Field height observed (in)','Field width vs image bounds (%)','Field height vs image bounds (%)','Source image','Fitment status']];
     for(let i=0;i<panelMasks.length;i++){
-      const points=panelMasks[i],xs=points.map(p=>p[0]),ys=points.map(p=>p[1]);
-      const width=(Math.max(...xs)-Math.min(...xs))*state.width/scale;
-      const height=(Math.max(...ys)-Math.min(...ys))*state.height/scale;
-      let twiceArea=0;
-      for(let k=0;k<points.length;k++){
-        const a=points[k],b=points[(k+1)%points.length];
-        twiceArea+=a[0]*b[1]-b[0]*a[1];
-      }
-      const area=Math.abs(twiceArea)*state.width*state.height/(2*scale*scale);
-      lines.push([panelNames[i]||'Panel '+(i+1),points.length,width.toFixed(1),height.toFixed(1),area.toFixed(1),state.sourceName,'UNVERIFIED RASTER REFERENCE - NOT PRINT READY']);
+      const points=panelMasks[i],reference=panelReferenceSize(points,scale);
+      const field=panelFieldMeasurements[i]||{};
+      const width=validFieldInches(field.width),height=validFieldInches(field.height);
+      const delta=(actual,estimated)=>actual===null?'':((actual/estimated-1)*100).toFixed(1);
+      lines.push([panelNames[i]||'Panel '+(i+1),points.length,reference.width.toFixed(1),reference.height.toFixed(1),reference.area.toFixed(1),width===null?'':width,height===null?'':height,delta(width,reference.width),delta(height,reference.height),state.sourceName,'FIELD OBSERVATIONS AND RASTER BOUNDS - UNVERIFIED, NOT PRINT READY']);
     }
     download(lines.map(row=>row.map(csvCell).join(',')).join('\r\n')+'\r\n','racewrap-panel-reference.csv','text/csv;charset=utf-8');
     status('Approximate panel reference CSV downloaded for '+panelMasks.length+' traced panel(s). These are not cut dimensions or print-ready measurements.');
@@ -384,7 +423,7 @@
     layoutAnchor=null;layoutChoice=0;
     logoLayoutUndo=null;$('undoArrangeLogos').disabled=true;
     designSlots=[null,null,null];updateDesignSlots();
-    panelMasks.length=0;panelNames.length=0;draftPanel=[];tracingPanel=false;rulerPoints=[];measuringSpan=false;drawRuler();
+    panelMasks.length=0;panelNames.length=0;panelFieldMeasurements.length=0;draftPanel=[];tracingPanel=false;rulerPoints=[];measuringSpan=false;drawRuler();
     patternMoveMode=null;patternPointer=null;
     image.src=state.source;image.style.display='block';$('empty').style.display='none';
     canvas.style.aspectRatio=state.width+' / '+state.height;canvas.style.minHeight='0';
@@ -849,7 +888,7 @@
     for(const id of ['prompt','body','number','base','accent','trim','sponsor','px','inch','pattern','patternOpacity','patternAngle','patternScale','patternX','patternY','secondaryPattern','secondaryX','secondaryY','secondaryOpacity','logoSize'])fields[id]=$(id).value;
     const positions={};
     for(const el of overlays)positions[el.id]={left:el.style.left,top:el.style.top,width:el.style.width,zIndex:el.style.zIndex};
-    return {version:2,fields,positions,layoutComparison:layoutAnchor?{anchor:layoutAnchor,choice:layoutChoice}:null,designSlots:designSlots.map(slot=>slot?{...slot}:null),template:{data:state.source,name:state.sourceName,type:state.sourceType,width:state.width,height:state.height},logo:{data:state.logo,name:state.logoName,type:state.logoType},extraLogos:extraLogos.map(item=>({data:item.data,name:item.name,type:item.type,left:item.el.style.left,top:item.el.style.top,width:item.el.style.width,zIndex:item.el.style.zIndex})),panelMasks:panelMasks.map(p=>p.map(([x,y])=>[x,y])),panelNames:panelNames.slice(),rulerPoints:rulerPoints.map(([x,y])=>[x,y])};
+    return {version:2,fields,positions,layoutComparison:layoutAnchor?{anchor:layoutAnchor,choice:layoutChoice}:null,designSlots:designSlots.map(slot=>slot?{...slot}:null),template:{data:state.source,name:state.sourceName,type:state.sourceType,width:state.width,height:state.height},logo:{data:state.logo,name:state.logoName,type:state.logoType},extraLogos:extraLogos.map(item=>({data:item.data,name:item.name,type:item.type,left:item.el.style.left,top:item.el.style.top,width:item.el.style.width,zIndex:item.el.style.zIndex})),panelMasks:panelMasks.map(p=>p.map(([x,y])=>[x,y])),panelNames:panelNames.slice(),panelFieldMeasurements:panelFieldMeasurements.map(entry=>({width:validFieldInches(entry?.width),height:validFieldInches(entry?.height)})),rulerPoints:rulerPoints.map(([x,y])=>[x,y])};
   }
   function saveProject() {
     if(!state.source){status('Import a template before saving a project.');return;}
@@ -906,7 +945,7 @@
       if(Number.isInteger(primaryLayer)&&primaryLayer>=20&&primaryLayer<=27)$('logoGraphic').style.zIndex=String(primaryLayer);
       normalizeLogoLayers();
       if(Array.isArray(obj.panelMasks))for(const p of obj.panelMasks.slice(0,12)) {
-        if(Array.isArray(p)&&p.length>=3&&p.length<=60&&p.every(point=>Array.isArray(point)&&point.length===2&&point.every(v=>typeof v==='number'&&Number.isFinite(v)&&v>=0&&v<=1))){panelMasks.push(p);const name=Array.isArray(obj.panelNames)?obj.panelNames[panelNames.length]:'';panelNames.push(typeof name==='string'&&name.trim()?name.trim().slice(0,50):'Panel '+panelMasks.length);}
+        if(Array.isArray(p)&&p.length>=3&&p.length<=60&&p.every(point=>Array.isArray(point)&&point.length===2&&point.every(v=>typeof v==='number'&&Number.isFinite(v)&&v>=0&&v<=1))){panelMasks.push(p);const name=Array.isArray(obj.panelNames)?obj.panelNames[panelNames.length]:'';panelNames.push(typeof name==='string'&&name.trim()?name.trim().slice(0,50):'Panel '+panelMasks.length);const field=Array.isArray(obj.panelFieldMeasurements)?obj.panelFieldMeasurements[panelFieldMeasurements.length]:null;panelFieldMeasurements.push({width:validFieldInches(field?.width),height:validFieldInches(field?.height)});}
       }
       if(Array.isArray(obj.rulerPoints)&&obj.rulerPoints.length===2&&obj.rulerPoints.every(p=>Array.isArray(p)&&p.length===2&&p.every(n=>typeof n==='number'&&Number.isFinite(n)&&n>=0&&n<=1)))rulerPoints=obj.rulerPoints.map(p=>p.slice());
       layoutAnchor=null;layoutChoice=0;
@@ -992,12 +1031,13 @@
     if(issue){status('Panel rejected: '+issue+'. Undo a point and retrace.');return;}
     panelMasks.push(draftPanel);
     panelNames.push($('panelName').value.trim().slice(0,50)||'Panel '+panelMasks.length);
+    panelFieldMeasurements.push({width:null,height:null});
     $('panelName').value='';
     draftPanel=[];tracingPanel=false;drawPattern();drawPanelOverlay();
     scheduleAutosave();status('Artwork mask added. This is not a production cut path.');
   });
   $('undoPoint').addEventListener('click',()=>{draftPanel.pop();drawPanelOverlay();});
-  $('clearPanels').addEventListener('click',()=>{panelMasks.length=0;panelNames.length=0;draftPanel=[];drawPattern();drawPanelOverlay();scheduleAutosave();});
+  $('clearPanels').addEventListener('click',()=>{panelMasks.length=0;panelNames.length=0;panelFieldMeasurements.length=0;draftPanel=[];drawPattern();drawPanelOverlay();scheduleAutosave();});
   $('enableAI').addEventListener('click',enableLocalAI);
   $('canvasLock').addEventListener('click',()=>{if(!canvasLocked){patternMoveMode=null;patternPointer=null;}setCanvasLocked(!canvasLocked);});
   $('layoutRebase').addEventListener('click',captureLayout);
