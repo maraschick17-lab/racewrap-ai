@@ -47,32 +47,50 @@
       req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error||Error('Storage unavailable'));
     });
   }
+  // Wait for the IndexedDB transaction to commit, not merely request success.
+  // Serialize writes/deletes so a delayed autosave cannot resurrect a cleared draft.
+  let draftMutationQueue=Promise.resolve();
   async function draftAction(mode,value,key='latest') {
-    const db=await openDraftDB();
+    const execute=async()=>{
+      const db=await openDraftDB();
+      try {
+        return await new Promise((resolve,reject)=>{
+          const tx=db.transaction('drafts',mode==='read'?'readonly':'readwrite');
+          let result;
+          tx.oncomplete=()=>resolve(result);
+          tx.onabort=()=>reject(tx.error||Error('Draft transaction aborted'));
+          tx.onerror=()=>reject(tx.error||Error('Storage failed'));
+          const store=tx.objectStore('drafts');
+          const req=mode==='read'?store.get(key):mode==='delete'?store.delete(key):store.put(value,key);
+          req.onsuccess=()=>{result=req.result;};
+          req.onerror=()=>reject(req.error||Error('Draft operation failed'));
+        });
+      } finally {db.close();}
+    };
+    if(mode==='read')return execute();
+    const pending=draftMutationQueue.then(execute,execute);
+    draftMutationQueue=pending.catch(()=>{});
+    return pending;
+  }
+  async function persistDraft() {
+    if(!state.source)return false;
     try {
-      return await new Promise((resolve,reject)=>{
-        const tx=db.transaction('drafts',mode==='read'?'readonly':'readwrite');
-        const store=tx.objectStore('drafts');
-        const req=mode==='read'?store.get(key):mode==='delete'?store.delete(key):store.put(value,key);
-        req.onsuccess=()=>resolve(req.result);
-        req.onerror=()=>reject(req.error||Error('Draft operation failed'));
-        tx.onerror=()=>reject(tx.error||Error('Storage failed'));
-      });
-    } finally {db.close();}
+      const json=JSON.stringify(project());
+      if(json.length>30*1024*1024)throw Error('Project exceeds 30 MB browser autosave limit');
+      const savedAt=Date.now();
+      await draftAction('write',{json,savedAt});
+      $('autosaveStatus').textContent='Draft saved in this browser at '+new Date(savedAt).toLocaleTimeString()+'.';
+      $('recoverDraft').disabled=false;$('clearDraft').disabled=false;
+      return true;
+    } catch(err){
+      $('autosaveStatus').textContent='Autosave unavailable: '+err.message+'. Download project JSON instead.';
+      return false;
+    }
   }
   function scheduleAutosave() {
     if(!state.source)return;
     clearTimeout(draftTimer);
-    draftTimer=setTimeout(async()=>{
-      try {
-        const json=JSON.stringify(project());
-        if(json.length>30*1024*1024)throw Error('Project exceeds 30 MB browser autosave limit');
-        const savedAt=Date.now();
-        await draftAction('write',{json,savedAt});
-        $('autosaveStatus').textContent='Draft saved in this browser at '+new Date(savedAt).toLocaleTimeString()+'.';
-        $('recoverDraft').disabled=false;$('clearDraft').disabled=false;
-      } catch(err){$('autosaveStatus').textContent='Autosave unavailable: '+err.message+'. Download project JSON instead.';}
-    },1300);
+    draftTimer=setTimeout(()=>{persistDraft();},1300);
   }
   async function checkDraft() {
     try {
@@ -161,6 +179,7 @@
     for (const item of extraLogos) item.el.style.display=ready?'block':'none';
     $('patternLayer').style.display=ready&&($('pattern').value!=='none'||$('secondaryPattern').value!=='none')?'block':'none';
     $('arrangeLogos').disabled=!ready||!logoItems().length;
+    $('saveDraftNow').disabled=!ready;
     drawPattern();drawPanelOverlay();drawRuler();setCanvasLocked(canvasLocked);scheduleAutosave();
   }
   // Touch and mouse positioning uses the same saved 0–100% sliders as exports.
@@ -976,6 +995,16 @@
   $('savePNG').addEventListener('click',exportPNG);
   $('exportPanelReport').addEventListener('click',exportPanelReference);
   $('saveProject').addEventListener('click',saveProject);
+  $('saveDraftNow').addEventListener('click',async()=>{
+    clearTimeout(draftTimer);
+    const button=$('saveDraftNow');
+    button.disabled=true;
+    $('autosaveStatus').textContent='Saving browser draft…';
+    try {
+      const saved=await persistDraft();
+      if(saved)status('Browser draft saved after storage transaction completed. Download editable JSON for a portable backup.');
+    } finally {button.disabled=!state.source;}
+  });
   $('shareProject').addEventListener('click',shareProject);
   $('restorePrevious').addEventListener('click',async()=>{
     const button=$('restorePrevious');button.disabled=true;
