@@ -18,7 +18,7 @@ const fixture='<svg xmlns="http://www.w3.org/2000/svg" width="800" height="500">
  try{
    const response=await page.goto(url+'?share-test='+Date.now(),{waitUntil:'domcontentloaded'});
    assert.equal(response.status(),200);
-   await page.waitForFunction(()=>document.querySelector('script[src*="studio-v3.js?v=native-project-share-22"]'));
+   await page.waitForFunction(()=>document.querySelector('script[src^="studio-v3.js?v="]'));
    await page.locator('#template').setInputFiles({name:'licensed-share-fixture.svg',mimeType:'image/svg+xml',buffer:Buffer.from(fixture)});
    await page.waitForFunction(()=>document.querySelector('#sourceMeta').textContent.includes('licensed-share-fixture'));
    await page.locator('#number').fill('27');
