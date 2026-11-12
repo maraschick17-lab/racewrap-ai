@@ -22,6 +22,7 @@
   let layoutAnchor = null, layoutChoice = 0;
   let designSlots = [null,null,null];
   let canvasLocked = false;
+  let patternMoveMode = null, patternPointer = null;
   // Session-only mobile editing mode. Locked artwork cannot capture touch drags,
   // allowing vertical scrolling across the imported template on small screens.
   function setCanvasLocked(locked) {
@@ -35,6 +36,7 @@
     $('canvasLock').textContent=canvasLocked?'Unlock artwork to edit':'Lock artwork to scroll';
     $('canvasLock').setAttribute('aria-pressed',String(canvasLocked));
     $('canvasLockStatus').textContent=canvasLocked?'Artwork locked: swipe over the canvas to scroll the page. Unlock to drag the number or logos.':'Artwork editable: drag the number or logos. Lock artwork when you need to scroll on a phone.';
+    updatePatternMoveUI();
   }
   const DRAFT_DB = 'racewrap-concept-drafts';
   function openDraftDB() {
@@ -161,6 +163,66 @@
     $('arrangeLogos').disabled=!ready||!logoItems().length;
     drawPattern();drawPanelOverlay();drawRuler();setCanvasLocked(canvasLocked);scheduleAutosave();
   }
+  // Touch and mouse positioning uses the same saved 0–100% sliders as exports.
+  // This is manual placement, not an AI-generated image or measured fitment.
+  function updatePatternMoveUI() {
+    const layer=$('patternLayer');
+    const ready=!!state.source;
+    const enabled=ready&&!canvasLocked&&!!patternMoveMode;
+    layer.style.pointerEvents=enabled?'auto':'none';
+    layer.style.touchAction=enabled?'none':'pan-y';
+    layer.style.cursor=enabled?'move':'default';
+    for(const [id,mode,patternId] of [['movePrimary','primary','pattern'],['moveSecondary','secondary','secondaryPattern']]) {
+      const button=$(id);
+      button.disabled=!ready||$(patternId).value==='none'||canvasLocked;
+      button.setAttribute('aria-pressed',String(patternMoveMode===mode&&!canvasLocked));
+      button.textContent=patternMoveMode===mode&&!canvasLocked?'Done moving '+mode:'Drag '+mode+' graphics';
+    }
+    $('patternMoveStatus').textContent=!ready?'Load a car or licensed template to position graphics.':
+      canvasLocked?'Unlock artwork to move graphics.':
+      patternMoveMode?'Drag anywhere on the canvas to move '+patternMoveMode+' graphics; use sliders for precise adjustments.':
+      'Choose a layer to drag its graphics on the canvas. Sponsor logos and number have separate drag controls.';
+  }
+  function choosePatternMove(mode) {
+    if(!state.source){status('Load a car or licensed template first.');return;}
+    if(canvasLocked){status('Unlock artwork before moving graphics.');return;}
+    const patternId=mode==='primary'?'pattern':'secondaryPattern';
+    if($(patternId).value==='none'){status('Select a graphic treatment for this layer first.');return;}
+    patternMoveMode=patternMoveMode===mode?null:mode;
+    patternPointer=null;
+    updatePatternMoveUI();
+  }
+  $('movePrimary').addEventListener('click',()=>choosePatternMove('primary'));
+  $('moveSecondary').addEventListener('click',()=>choosePatternMove('secondary'));
+  $('patternLayer').addEventListener('pointerdown',e=>{
+    if(!patternMoveMode||!state.source||canvasLocked||tracingPanel||measuringSpan)return;
+    if(e.pointerType==='mouse'&&e.button!==0)return;
+    const xId=patternMoveMode==='primary'?'patternX':'secondaryX';
+    const yId=patternMoveMode==='primary'?'patternY':'secondaryY';
+    patternPointer={id:e.pointerId,x:e.clientX,y:e.clientY,xId,yId,startX:Number($(xId).value),startY:Number($(yId).value)};
+    $('patternLayer').setPointerCapture(e.pointerId);
+    e.preventDefault();
+  });
+  $('patternLayer').addEventListener('pointermove',e=>{
+    if(!patternPointer||patternPointer.id!==e.pointerId)return;
+    const box=canvas.getBoundingClientRect();
+    if(!box.width||!box.height)return;
+    $(patternPointer.xId).value=String(Math.round(clamp(patternPointer.startX+(e.clientX-patternPointer.x)/box.width*100,0,100)));
+    $(patternPointer.yId).value=String(Math.round(clamp(patternPointer.startY+(e.clientY-patternPointer.y)/box.height*100,0,100)));
+    drawPattern();
+    e.preventDefault();
+  });
+  function finishPatternMove(e) {
+    if(!patternPointer||patternPointer.id!==e.pointerId)return;
+    if(e.type==='pointercancel'){
+      $(patternPointer.xId).value=String(patternPointer.startX);
+      $(patternPointer.yId).value=String(patternPointer.startY);
+    }
+    patternPointer=null;
+    refresh();
+  }
+  $('patternLayer').addEventListener('pointerup',finishPatternMove);
+  $('patternLayer').addEventListener('pointercancel',finishPatternMove);
   // Procedural graphics; optional on-device AI selects controls, not image pixels.
   function patternShapes(style,accent,trim) {
     let shapes='';
@@ -245,6 +307,7 @@
     logoLayoutUndo=null;$('undoArrangeLogos').disabled=true;
     designSlots=[null,null,null];updateDesignSlots();
     panelMasks.length=0;panelNames.length=0;draftPanel=[];tracingPanel=false;rulerPoints=[];measuringSpan=false;drawRuler();
+    patternMoveMode=null;patternPointer=null;
     image.src=state.source;image.style.display='block';$('empty').style.display='none';
     canvas.style.aspectRatio=state.width+' / '+state.height;canvas.style.minHeight='0';
     overlays.forEach(el=>{el.style.left=el=== $('graphic')?'34%':el===$('logoGraphic')?'55%':'32%';el.style.top=el=== $('graphic')?'35%':el===$('logoGraphic')?'57%':'72%';});
@@ -795,7 +858,7 @@
   $('measureSpan').addEventListener('click',()=>{
     if(!state.source){status('Import a licensed template before using the reference ruler.');return;}
     measuringSpan=!measuringSpan;
-    if(measuringSpan){rulerPoints=[];tracingPanel=false;draftPanel=[];drawPanelOverlay();}
+    if(measuringSpan){patternMoveMode=null;patternPointer=null;updatePatternMoveUI();rulerPoints=[];tracingPanel=false;draftPanel=[];drawPanelOverlay();}
     drawRuler();
   });
   $('clearSpan').addEventListener('click',()=>{rulerPoints=[];measuringSpan=false;drawRuler();scheduleAutosave();});
@@ -844,7 +907,7 @@
   });
   $('tracePanel').addEventListener('click',()=>{
     if(!state.source){status('Import a licensed body template before tracing panels.');return;}
-    tracingPanel=!tracingPanel;draftPanel=[];if(tracingPanel){measuringSpan=false;drawRuler();}drawPanelOverlay();
+    tracingPanel=!tracingPanel;draftPanel=[];if(tracingPanel){patternMoveMode=null;patternPointer=null;updatePatternMoveUI();measuringSpan=false;drawRuler();}drawPanelOverlay();
   });
   $('finishPanel').addEventListener('click',()=>{
     if(draftPanel.length<3)return;
@@ -857,7 +920,7 @@
   $('undoPoint').addEventListener('click',()=>{draftPanel.pop();drawPanelOverlay();});
   $('clearPanels').addEventListener('click',()=>{panelMasks.length=0;panelNames.length=0;draftPanel=[];drawPattern();drawPanelOverlay();scheduleAutosave();});
   $('enableAI').addEventListener('click',enableLocalAI);
-  $('canvasLock').addEventListener('click',()=>setCanvasLocked(!canvasLocked));
+  $('canvasLock').addEventListener('click',()=>{if(!canvasLocked){patternMoveMode=null;patternPointer=null;}setCanvasLocked(!canvasLocked);});
   $('layoutRebase').addEventListener('click',captureLayout);
   for(let i=0;i<3;i++){
     $('slotSave'+i).addEventListener('click',()=>captureDesignSlot(i));
