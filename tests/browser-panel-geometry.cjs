@@ -14,7 +14,7 @@ const base=process.env.BASE_URL||'https://racewrap-ai-studio.onrender.com';
     const response=await page.goto(base+'/?polygon='+Date.now(),{waitUntil:'domcontentloaded'});
     assert.equal(response.status(),200);
     const script=await page.locator('script[src*="studio-v3"]').getAttribute('src');
-    assert.match(script,/field-measurements-35/);
+    assert.match(script,/studio-v3\.js\?v=[a-z0-9-]+/);
     const svg='<svg xmlns="http://www.w3.org/2000/svg" width="800" height="500"><rect width="800" height="500" fill="white"/></svg>';
     await page.locator('#template').setInputFiles({name:'licensed-test.svg',mimeType:'image/svg+xml',buffer:Buffer.from(svg)});
     await page.waitForFunction(()=>document.querySelector('#sourceMeta').textContent.includes('licensed-test'));

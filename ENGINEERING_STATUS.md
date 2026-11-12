@@ -1,3 +1,9 @@
+## 2026-11-12 16:49 CST — local worker review and regression verification
+- Inspected local main and Render: Render live is 037e8b1 (21:49 UTC); local branch has additional unpushed worker commits. Windows API worker task was disabled when inspected; no active worker lock, and no concurrent writer was detected. No push/deploy was initiated because website publication requires user approval.
+- Installed local Playwright dependency and verified 21/21 non-AI Chrome browser suites against the local repository over localhost (Chrome 1280px and simulated 390px touch coverage within suites). The optional WebGPU inference was not retested.
+- Reviewed a worker change that broadened editable project import to any image data URL. Tightened it to supported base64 PNG/JPEG/WebP formats, preserving the existing 18 MB size limit; this is a defensive compatibility change, not a full image-content sanitizer.
+- Bumped active studio-v3.js asset query to local-review-36 so subsequent approved deployment will not reuse stale JavaScript. Replaced two brittle regression checks for the previous hardcoded asset version with generic versioned-script checks. After edits, 19/21 suites passed initially; both remaining suites failed only their hardcoded asset-version assertions, then passed when rerun at desktop and simulated mobile after updating those assertions. All 21 distinct suites passed on the final code across the two runs. Node syntax and Git diff checks passed.
+- Remaining launch blockers: inaccurate low-resolution Stock Car artwork, unverified print geometry, no real iPhone Safari test, and AI design limited to local cue-driven procedural compositions. Do not represent these as solved or print-ready.
 # RaceWrap AI engineering status
 
 ## 2026-11-12 15:50 CST â€” field-measured panel observation capture and comparison
