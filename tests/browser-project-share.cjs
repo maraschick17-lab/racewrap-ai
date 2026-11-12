@@ -31,7 +31,7 @@ const fixture='<svg xmlns="http://www.w3.org/2000/svg" width="800" height="500">
    const project=JSON.parse(shared.json);
    assert.equal(project.version,2);
    assert.equal(project.fields.number,'27');
-   assert.match(project.template.data,/^data:image\\/png;base64,/);
+   assert.ok(project.template.data.startsWith('data:image/png;base64,'));
    assert.equal(await page.locator('#shareProject').isEnabled(),true);
    assert.match(await page.locator('#status').innerText(),/share sheet/i);
    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),true);
