@@ -300,7 +300,7 @@
     const csvCell=value=>{
       const raw=String(value??'');
       // Excel and other spreadsheet programs may execute untrusted cell formulas.
-      const guarded=/^\\s*[=+\\-@]/.test(raw)?"'"+raw:raw;
+      const guarded=/^\s*[=+\-@]/.test(raw)?"'"+raw:raw;
       return '"'+guarded.replace(/"/g,'""')+'"';
     };
     const lines=[['Panel','Vertices','Approx bounding width (in)','Approx bounding height (in)','Approx traced area (sq in)','Source image','Fitment status']];
@@ -316,7 +316,7 @@
       const area=Math.abs(twiceArea)*state.width*state.height/(2*scale*scale);
       lines.push([panelNames[i]||'Panel '+(i+1),points.length,width.toFixed(1),height.toFixed(1),area.toFixed(1),state.sourceName,'UNVERIFIED RASTER REFERENCE - NOT PRINT READY']);
     }
-    download(lines.map(row=>row.map(csvCell).join(',')).join('\\r\\n')+'\\r\\n','racewrap-panel-reference.csv','text/csv;charset=utf-8');
+    download(lines.map(row=>row.map(csvCell).join(',')).join('\r\n')+'\r\n','racewrap-panel-reference.csv','text/csv;charset=utf-8');
     status('Approximate panel reference CSV downloaded for '+panelMasks.length+' traced panel(s). These are not cut dimensions or print-ready measurements.');
   }
   function drawRuler() {
