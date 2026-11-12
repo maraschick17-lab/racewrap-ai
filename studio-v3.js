@@ -10,6 +10,7 @@
   const image = $('bodyImage');
   const overlays = [$('graphic'),$('sponsorGraphic'),$('logoGraphic')];
   const extraLogos = [];
+  let logoLayoutUndo=null;
   $('logoGraphic').style.zIndex='20';
   let selectedLogo = 0, nextLogoId = 1;
   const panelMasks = [];
@@ -140,6 +141,7 @@
     $('logoGraphic').style.display=ready&&!!state.logo?'block':'none';
     for (const item of extraLogos) item.el.style.display=ready?'block':'none';
     $('patternLayer').style.display=ready&&($('pattern').value!=='none'||$('secondaryPattern').value!=='none')?'block':'none';
+    $('arrangeLogos').disabled=!ready||!logoItems().length;
     drawPattern();drawPanelOverlay();drawRuler();scheduleAutosave();
   }
   // Procedural graphics; optional on-device AI selects controls, not image pixels.
@@ -223,6 +225,7 @@
   function setTemplate(result,name,kind) {
     state.source=result.data;state.width=result.width;state.height=result.height;state.sourceName=name;state.sourceType=kind;
     layoutAnchor=null;layoutChoice=0;
+    logoLayoutUndo=null;$('undoArrangeLogos').disabled=true;
     designSlots=[null,null,null];updateDesignSlots();
     panelMasks.length=0;panelNames.length=0;draftPanel=[];tracingPanel=false;rulerPoints=[];measuringSpan=false;drawRuler();
     image.src=state.source;image.style.display='block';$('empty').style.display='none';
@@ -274,12 +277,51 @@
     $('downloadLogo').disabled=!items.length;$('removeLogo').disabled=!items.length;
     $('logoInfo').textContent=items.length?items.length+' logo(s) · selected: '+items[Math.min(selectedLogo,items.length-1)].name+' · PNG preview':'No logo selected';
     updateLayerControls();
+    $('arrangeLogos').disabled=!state.source||!items.length;
   }
   function selectLogo(index) {
     const items=logoItems();
     selectedLogo=clamp(index,0,Math.max(0,items.length-1));
     if(items[selectedLogo]) $('logoSize').value=parseFloat(items[selectedLogo].el.style.width)||22;
     renderLogoList();
+  }
+
+  // Manual deterministic layout aid; never label this as AI.
+  async function arrangeSponsorLogos() {
+    const items=logoItems();
+    if(!state.source||!items.length){status('Import a template and logos first.');return;}
+    $('arrangeLogos').disabled=true;
+    try {
+      await Promise.all(items.map(item=>item.el.decode().catch(()=>{})));
+      const box=canvas.getBoundingClientRect();
+      if(!box.width||!box.height)throw Error('Canvas dimensions unavailable');
+      const previous=items.map(item=>({el:item.el,left:item.el.style.left,top:item.el.style.top,width:item.el.style.width}));
+      const split=items.length>4?Math.ceil(items.length/2):0;
+      const groups=split?[items.slice(0,split),items.slice(split)]:[items];
+      groups.forEach((group,row)=>{
+        const slot=1/group.length, top=split?(row===0?.035:.755):.755;
+        group.forEach((item,col)=>{
+          const aspect=(item.el.naturalWidth||2)/(item.el.naturalHeight||1);
+          const width=Math.min((slot-.04)*100,.205*box.height/box.width*aspect*100);
+          const height=width/100*box.width/box.height/aspect;
+          item.el.style.width=width.toFixed(3)+'%';
+          item.el.style.left=((col+.5)*slot*100-width/2).toFixed(3)+'%';
+          item.el.style.top=((top+(.205-height)/2)*100).toFixed(3)+'%';
+        });
+      });
+      logoLayoutUndo=previous;$('undoArrangeLogos').disabled=false;
+      selectLogo(selectedLogo);scheduleAutosave();
+      status('Arranged '+items.length+' logos in editable rows; use Undo arrangement to restore positions.');
+    }catch(err){status('Sponsor arrangement failed: '+err.message);}
+    finally{$('arrangeLogos').disabled=!state.source||!logoItems().length;}
+  }
+  function undoSponsorArrangement() {
+    if(!logoLayoutUndo)return;
+    for(const item of logoLayoutUndo)if(item.el.isConnected){
+      item.el.style.left=item.left;item.el.style.top=item.top;item.el.style.width=item.width;
+    }
+    logoLayoutUndo=null;$('undoArrangeLogos').disabled=true;
+    selectLogo(selectedLogo);scheduleAutosave();status('Previous sponsor positions and sizes restored.');
   }
   function addExtraLogo(data,name,type,placement={}) {
     const el=document.createElement('img');
@@ -304,6 +346,7 @@
     if(logoItems().length>=8){status('Maximum 8 sponsor logos per concept.');return;}
     try {
       const result=await rasterize(file,kind,2400);
+      logoLayoutUndo=null;$('undoArrangeLogos').disabled=true;
       if(!state.logo) {
         state.logo=result.data;state.logoName=file.name;state.logoType=kind;
         $('logoGraphic').src=state.logo;
@@ -636,6 +679,7 @@
       const obj=JSON.parse(await file.text());
       if(obj.version!==2||!obj.template||!/^data:image\/png;base64,/.test(obj.template.data))throw Error('Unsupported project');
       if(obj.template.data.length>18*1024*1024)throw Error('Template too large');
+      logoLayoutUndo=null;$('undoArrangeLogos').disabled=true;
       clearExtraLogos();state.logo='';state.logoName='';state.logoType='';$('logoGraphic').src='';$('logoGraphic').style.zIndex='20';
       for(const [key,value] of Object.entries({secondaryPattern:'none',secondaryX:'50',secondaryY:'50',secondaryOpacity:'65',...(obj.fields||{})}))if($(key)&&typeof value==='string'&&value.length<3000)$(key).value=value;
       setTemplate({data:obj.template.data,width:Number(obj.template.width),height:Number(obj.template.height)},String(obj.template.name||'Restored template').slice(0,100),obj.template.type||'png');
@@ -698,6 +742,8 @@
   for(const id of ['prompt','body','px','inch','logoSize'])$(id).addEventListener('input',scheduleAutosave);
   for(const id of ['px','inch'])$(id).addEventListener('input',calibrate);
   $('logoSize').addEventListener('input',()=>{const item=logoItems()[selectedLogo];if(item)item.el.style.width=$('logoSize').value+'%';});
+  $('arrangeLogos').addEventListener('click',arrangeSponsorLogos);
+  $('undoArrangeLogos').addEventListener('click',undoSponsorArrangement);
   for(const [button,direction] of [['logoBackward',-1],['logoForward',1]]) {
     $(button).addEventListener('click',()=>{
       const order=sortedLogos(),rank=order.findIndex(({i})=>i===selectedLogo);
@@ -759,6 +805,7 @@
   $('openProject').addEventListener('change',e=>loadProject(e.target.files[0]));
   $('downloadLogo').addEventListener('click',()=>{const item=logoItems()[selectedLogo];if(item){const a=document.createElement('a');a.href=item.data;a.download='sponsor-'+(selectedLogo+1)+'-normalized.png';a.click();}});
   $('removeLogo').addEventListener('click',()=>{
+    logoLayoutUndo=null;$('undoArrangeLogos').disabled=true;
     if(!logoItems().length)return;
     if(selectedLogo===0&&state.logo) {
       const next=extraLogos.shift();
