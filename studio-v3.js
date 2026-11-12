@@ -135,7 +135,7 @@
     const im = new Image();
     await new Promise((resolve,reject)=>{
       let timed = false;
-      const t = setTimeout(()=>{ timed = true; im.onload = null; im.onerror = null; reject(Error('Image load timed out (allow extra time for large files or slow devices)')); }, 20000);
+      const t = setTimeout(()=>{ timed = true; im.onload = null; im.onerror = null; reject(Error('Image load timed out (allow extra time for large files or slow devices)')); }, 30000);
       im.onload = ()=>{ if(!timed){ clearTimeout(t); resolve(); } };
       im.onerror = ()=>{ clearTimeout(t); reject(Error('Image cannot be decoded')); };
       im.src = url;
