@@ -1,9 +1,15 @@
+## 2026-11-12 evening CST - visual wrap design direction gallery (local only)
+- PRODUCT RESET: added a prominent, original four-card visual style gallery directly beneath car selection: Blackout Voltage, Blue Velocity, Sunset Throwback and Neon Apex. Each has a distinctive abstract graphic preview, palette, and one-click application to the existing editor's actual color and two-layer procedural controls. Existing race number and sponsor data are preserved; selected direction is indicated accessibly. This is procedural styling, not AI-generated imagery or a car-body template.
+- Responsive two-column mobile layout; new browser-design-gallery.cjs checks 4 visible choices, control updates, rendered graphic layer, preserved number/sponsor, zero overflow and zero JS errors at 1280px and 390px.
+- Verified all 23 non-AI browser suites PASS against localhost, including prior presentation board export. JS syntax and git diff checks pass. Active asset query design-gallery-38. No external paid API calls, proprietary artwork, push or deploy.
+- Remaining priority: replace inaccurate low-resolution Stock Car with licensed or newly original realistic body imagery; improve actual AI visual generation; real iPhone Safari and print fitment unverified. Local work awaits user publication approval.
+
 ## 2026-11-12 - client presentation board (local only)
 - Added separate Download presentation board: 2000 x 1400 PNG of current composition, number/sponsor heading, palette swatches, source resolution, and visible NOT PRINT-READY / unverified fitment labels. Existing PNG/SVG/project exports preserved. Active asset: presentation-board-37.
 - All 22 non-AI browser suites PASS on localhost using installed Chrome. New board regression checks actual PNG dimensions, output change after number edit, simulated mobile overflow and page errors. JS and new test syntax plus git diff --check PASS. Default Playwright browser missing; installed Chrome used. Existing local server reused.
 - Remaining: inaccurate low-resolution Stock Car artwork, physical fitment/geometry, real iPhone Safari and timed 30-minute workflow unverified. Optional WebGPU inference skipped. No external services, paid APIs, proprietary artwork, pushes or deployments.
 
-## 2026-11-12 16:49 CST — local worker review and regression verification
+## 2026-11-12 16:49 CST ï¿½ local worker review and regression verification
 - Inspected local main and Render: Render live is 037e8b1 (21:49 UTC); local branch has additional unpushed worker commits. Windows API worker task was disabled when inspected; no active worker lock, and no concurrent writer was detected. No push/deploy was initiated because website publication requires user approval.
 - Installed local Playwright dependency and verified 21/21 non-AI Chrome browser suites against the local repository over localhost (Chrome 1280px and simulated 390px touch coverage within suites). The optional WebGPU inference was not retested.
 - Reviewed a worker change that broadened editable project import to any image data URL. Tightened it to supported base64 PNG/JPEG/WebP formats, preserving the existing 18 MB size limit; this is a defensive compatibility change, not a full image-content sanitizer.
