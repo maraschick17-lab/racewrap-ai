@@ -111,7 +111,7 @@
     }
     el.innerHTML=svg;
     el.style.display=(tracingPanel||panelMasks.length)?'block':'none';
-    el.style.pointerEvents=tracingPanel?'auto':'none';
+    el.style.pointerEvents=tracingPanel?'all':'none';
     el.style.zIndex=tracingPanel?'10':'1';
     $('tracePanel').textContent=tracingPanel?'Cancel tracing':'Trace panel';
     $('finishPanel').disabled=draftPanel.length<3;
