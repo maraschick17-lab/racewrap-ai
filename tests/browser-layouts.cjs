@@ -14,7 +14,7 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
   if(await page.locator('#layout1').isDisabled())throw Error('Manual layout comparisons unavailable');
   await page.locator('#prompt').fill('Red silver number 17 lightning');
   await page.locator('#generate').click();
-  await page.waitForFunction(()=>!document.querySelector('#layout1').disabled);
+  await page.waitForFunction(()=>!document.querySelector('#generate').disabled && /design applied/i.test(document.querySelector('#status').textContent));
   const get=()=>page.evaluate(()=>Object.fromEntries(['pattern','patternAngle','patternScale','patternOpacity','patternX','patternY'].map(id=>[id,document.getElementById(id).value])));
   const original=await get();
   await page.locator('#layout1').click();const flowing=await get();
