@@ -11,7 +11,7 @@ const base=process.env.BASE_URL||'https://racewrap-ai-studio.onrender.com';
    const page=await context.newPage(),errors=[];
    page.on('pageerror',e=>errors.push(e.message));
    try {
-    const response=await page.goto(base+'/index.html?panelcsv='+Date.now(),{waitUntil:'domcontentloaded'});
+    const response=await page.goto(base+'/?panelcsv='+Date.now(),{waitUntil:'domcontentloaded'});
     assert.equal(response.status(),200);
     const button=page.locator('#exportPanelReport');
     assert.equal(await button.isDisabled(),true,'report must require ruler and polygon');
