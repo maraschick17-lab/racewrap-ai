@@ -1,0 +1,43 @@
+'use strict';
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
+(async()=>{
+ const b=await chromium.launch({headless:true,executablePath:process.env.CHROME_PATH||undefined,args:['--no-sandbox']});
+ const context=await b.newContext({acceptDownloads:true,viewport:{width:390,height:844}});
+ const p=await context.newPage();const errors=[];p.on('pageerror',e=>errors.push(e.message));
+ try{
+  await p.goto((process.env.BASE_URL||'https://racewrap-ai-studio.onrender.com')+'/?recovery='+Date.now(),{waitUntil:'domcontentloaded'});
+  const svg='<svg xmlns="http://www.w3.org/2000/svg" width="800" height="500"><rect width="800" height="500" fill="white"/></svg>';
+  await p.locator('#template').setInputFiles({name:'owned-template.svg',mimeType:'image/svg+xml',buffer:Buffer.from(svg)});
+  await p.waitForFunction(()=>document.querySelector('#sourceMeta').textContent.includes('owned-template.svg'));
+  await p.locator('#pattern').selectOption('ribbons');
+  for(const [id,value] of [['patternAngle','35'],['patternScale','150'],['patternOpacity','65']])await p.locator('#'+id).evaluate((el,v)=>{el.value=v;el.dispatchEvent(new Event('input',{bubbles:true}));},value);
+  const png64=await p.evaluate(()=>{const c=document.createElement('canvas');c.width=160;c.height=80;c.getContext('2d').fillRect(0,0,160,80);return c.toDataURL('image/png').split(',')[1];});
+  const png=Buffer.from(png64,'base64');
+  await p.locator('#logo').setInputFiles([{name:'one.png',mimeType:'image/png',buffer:png},{name:'two.png',mimeType:'image/png',buffer:png}]);
+  await p.waitForFunction(()=>document.querySelectorAll('#logoList button').length===2);
+  await p.locator('#logoList button').first().click();
+  await p.locator('#logoSize').evaluate(el=>{el.value='42';el.dispatchEvent(new Event('input',{bubbles:true}));});
+  await p.locator('#logoList button').nth(1).click();
+  await p.locator('#logoSize').evaluate(el=>{el.value='18';el.dispatchEvent(new Event('input',{bubbles:true}));});
+  const [dl]=await Promise.all([p.waitForEvent('download'),p.locator('#save').click()]);
+  const exported=fs.readFileSync(await dl.path(),'utf8');
+  assert.ok(exported.includes('rotate(35) scale(1.5)'),'Export lost composition transform');
+  await p.waitForFunction(()=>document.querySelector('#autosaveStatus').textContent.includes('Draft saved'),{timeout:10000});
+  await p.reload({waitUntil:'domcontentloaded'});
+  await p.waitForFunction(()=>!document.querySelector('#recoverDraft').disabled,{timeout:10000});
+  await p.locator('#recoverDraft').click();
+  await p.waitForFunction(()=>document.querySelectorAll('#logoList button').length===2,{timeout:10000});
+  assert.equal(await p.locator('#pattern').inputValue(),'ribbons');
+  assert.equal(await p.locator('#patternAngle').inputValue(),'35');
+  assert.equal(await p.locator('#patternScale').inputValue(),'150');
+  assert.equal(await p.locator('#logoGraphic').evaluate(el=>el.style.width),'42%');
+  assert.equal(await p.locator('#extraLogo1').evaluate(el=>el.style.width),'18%');
+  assert.equal(await p.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),true,'Mobile horizontal overflow');
+  assert.deepEqual(errors,[]);
+  console.log('PASS: mobile 390px, composition SVG export, browser autosave recovery, two distinct logo sizes, zero page errors');
+ }finally{await b.close();}
+})().catch(e=>{console.error('FAIL',e.stack);process.exitCode=1});
+
+[executed on device: DESKTOP-9EDS6SF (4ebdfe78-43cc-4438-8ff9-e35bda3b4ac1)]
