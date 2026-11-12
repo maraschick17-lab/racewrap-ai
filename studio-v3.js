@@ -825,6 +825,7 @@
   $('save').addEventListener('click',exportSVG);
   $('savePNG').addEventListener('click',exportPNG);
   $('saveProject').addEventListener('click',saveProject);
+  $('shareProject').addEventListener('click',shareProject);
   $('openProject').addEventListener('change',e=>loadProject(e.target.files[0]));
   $('downloadLogo').addEventListener('click',()=>{const item=logoItems()[selectedLogo];if(item){const a=document.createElement('a');a.href=item.data;a.download='sponsor-'+(selectedLogo+1)+'-normalized.png';a.click();}});
   $('removeLogo').addEventListener('click',()=>{
