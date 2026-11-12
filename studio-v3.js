@@ -673,6 +673,29 @@
     download(JSON.stringify(project()),'racewrap-project.json','application/json');
     status('Editable project downloaded. Keep the JSON file to resume later.');
   }
+  async function shareProject() {
+    if(!state.source){status('Import a licensed template before sharing a project.');return;}
+    const json=JSON.stringify(project());
+    const file=new File([json],'racewrap-project.json',{type:'application/json'});
+    // Native file sharing works only on supporting secure-context browsers; never upload a project to a server.
+    if(!navigator.share || !navigator.canShare || !navigator.canShare({files:[file]})) {
+      download(json,file.name,file.type);
+      status('File sharing is unavailable on this device. Editable project JSON downloaded instead.');
+      return;
+    }
+    const button=$('shareProject');
+    button.disabled=true;
+    try {
+      await navigator.share({title:'RaceWrap AI editable project',files:[file]});
+      status('Editable project sent to the device share sheet. Save the JSON file to reopen it elsewhere.');
+    } catch(err) {
+      if(err.name==='AbortError')status('Sharing cancelled. Your design remains in the editor.');
+      else {
+        download(json,file.name,file.type);
+        status('Device sharing failed. Editable project JSON downloaded instead.');
+      }
+    } finally {button.disabled=false;}
+  }
   async function loadProject(file) {
     if(!file || file.size>20*1024*1024){status('Project must be under 20 MB');return;}
     try {
