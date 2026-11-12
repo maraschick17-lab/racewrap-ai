@@ -11,7 +11,7 @@ const base=process.env.BASE_URL||'https://racewrap-ai-studio.onrender.com';
  try{
   const response=await page.goto(base+'/?sponsor-layout='+Date.now(),{waitUntil:'domcontentloaded'});
   assert.equal(response.status(),200);
-  await page.waitForFunction(()=>document.querySelector('script[src*="sponsor-layout-21"]')&&document.querySelector('#arrangeLogos'));
+  await page.waitForFunction(()=>document.querySelector('script[src*="studio-v3.js?v="]')&&document.querySelector('#arrangeLogos'));
   const svg='<svg xmlns="http://www.w3.org/2000/svg" width="800" height="500"><rect width="800" height="500" fill="white"/></svg>';
   await page.locator('#template').setInputFiles({name:'licensed-fixture.svg',mimeType:'image/svg+xml',buffer:Buffer.from(svg)});
   await page.waitForFunction(()=>document.querySelector('#sourceMeta').textContent.includes('licensed-fixture'));
