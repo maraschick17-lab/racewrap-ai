@@ -400,7 +400,7 @@
       const field=panelFieldMeasurements[i]||{};
       const width=validFieldInches(field.width),height=validFieldInches(field.height);
       const delta=(actual,estimated)=>actual===null?'':((actual/estimated-1)*100).toFixed(1);
-      lines.push([panelNames[i]||'Panel '+(i+1),points.length,reference.width.toFixed(1),reference.height.toFixed(1),reference.area.toFixed(1),width===null?'':width,height===null?'':height,delta(width,reference.width),delta(height,reference.height),state.sourceName,'FIELD OBSERVATIONS AND RASTER BOUNDS - UNVERIFIED, NOT PRINT READY']);
+      lines.push([panelNames[i]||'Panel '+(i+1),points.length,reference.width.toFixed(1),reference.height.toFixed(1),reference.area.toFixed(1),width===null?'':width,height===null?'':height,delta(width,reference.width),delta(height,reference.height),state.sourceName,'UNVERIFIED RASTER REFERENCE - NOT PRINT READY; FIELD OBSERVATIONS NOT VERIFIED']);
     }
     download(lines.map(row=>row.map(csvCell).join(',')).join('\r\n')+'\r\n','racewrap-panel-reference.csv','text/csv;charset=utf-8');
     status('Approximate panel reference CSV downloaded for '+panelMasks.length+' traced panel(s). These are not cut dimensions or print-ready measurements.');
