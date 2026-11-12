@@ -212,12 +212,13 @@
   }
   function setTemplate(result,name,kind) {
     state.source=result.data;state.width=result.width;state.height=result.height;state.sourceName=name;state.sourceType=kind;
+    layoutAnchor=null;layoutChoice=0;
     panelMasks.length=0;panelNames.length=0;draftPanel=[];tracingPanel=false;rulerPoints=[];measuringSpan=false;drawRuler();
     image.src=state.source;image.style.display='block';$('empty').style.display='none';
     canvas.style.aspectRatio=state.width+' / '+state.height;canvas.style.minHeight='0';
     overlays.forEach(el=>{el.style.left=el=== $('graphic')?'34%':el===$('logoGraphic')?'55%':'32%';el.style.top=el=== $('graphic')?'35%':el===$('logoGraphic')?'57%':'72%';});
     $('sourceMeta').textContent=name+' · '+kind.toUpperCase()+' · '+state.width+'×'+state.height+' px (concept)';
-    refresh();status('Template loaded. Drag the number, sponsor, and logo.');
+    refresh();updateLayoutButtons();status('Template loaded. Drag the number, sponsor, and logo.');
   }
   async function importTemplate(file) {
     if(!file)return;
