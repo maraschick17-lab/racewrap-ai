@@ -260,6 +260,17 @@
       if(kind==='pdf' && result.pages>1)status('PDF page 1 of '+result.pages+' loaded. Use a flat licensed template; PDF is rasterized for preview.');
     }catch(err){status('Template import failed: '+err.message);}
   }
+  // Original concept art is a convenient starting point, not measured panel geometry.
+  // Explicit click only: never overwrite a customer's saved browser draft on page load.
+  window.RaceWrapLoadConcept = async dataUrl => {
+    if(typeof dataUrl!=='string'||!dataUrl.startsWith('data:image/webp;base64,'))throw Error('Late Model concept image unavailable');
+    const response=await fetch(dataUrl);
+    const blob=await response.blob();
+    if(blob.type!=='image/webp'||blob.size<1000)throw Error('Late Model concept image invalid');
+    await importTemplate(new File([blob],'RaceWrap original Late Model concept.webp',{type:'image/webp'}));
+    $('sourceMeta').textContent+=' · Original visual concept only; NOT measured panels';
+    canvas.scrollIntoView({behavior:'smooth',block:'center'});
+  };
   function logoItems() {
     return (state.logo?[{el:$('logoGraphic'),data:state.logo,name:state.logoName,type:state.logoType}]:[]).concat(extraLogos);
   }
