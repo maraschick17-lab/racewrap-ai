@@ -279,7 +279,11 @@
         $('restorePrevious').disabled=false;
       }catch(err){throw Error('Cannot back up current design ('+err.message+'). Download editable JSON before switching cars.');}
     }
-    await importTemplate(new File([blob],'RaceWrap original '+carName+' concept.webp',{type:'image/webp'}));
+    const filename='RaceWrap original '+carName+' concept.webp';
+    await importTemplate(new File([blob],filename,{type:'image/webp'}));
+    if(state.sourceName!==filename)throw Error(carName+' concept could not be imported');
+    $('body').value=carName==='Modified'?'modified':carName==='Stock Car'?'stock':'late';
+    scheduleAutosave();
     $('sourceMeta').textContent+=' · Original visual concept only; NOT measured panels';
     canvas.scrollIntoView({behavior:'smooth',block:'center'});
   };
