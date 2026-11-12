@@ -494,18 +494,19 @@
     $('generate').disabled=true;
     try {
       let usedAI=false, mode='';
-      const instruction='Choose a bold, legible dirt-racecar wrap color palette and graphic pattern for: '+prompt+'. Output base, accent and trim as #RRGGBB hex strings, number as a short string, and pattern as one of slashes, lightning, chevrons, checker, ribbons, burst, none.';
+      const instruction='Choose the best graphic pattern for this racecar wrap description: '+prompt+'. Answer with exactly one word from: lightning, checker, ribbons, slashes, burst, chevrons, none.';
       if(webLLMEngine) {
-        status('Generating with locally loaded WebGPU AI…');
+        status('Asking the local WebGPU model to suggest a graphic pattern…');
         const response=await webLLMEngine.chat.completions.create({
-          messages:[{role:'system',content:'You are a racecar wrap stylist. Return valid JSON only.'},{role:'user',content:instruction}],
-          response_format:{type:'json_object',schema:JSON.stringify({type:'object',properties:{base:{type:'string'},accent:{type:'string'},trim:{type:'string'},number:{type:'string'},pattern:{type:'string',enum:['none','slashes','chevrons','lightning','checker','ribbons','burst']}},required:['base','accent','trim','number','pattern'],additionalProperties:false})},
-          temperature:0.2,max_tokens:160
+          messages:[{role:'system',content:'You are a dirt racing graphic designer. Reply with one pattern word only.'},{role:'user',content:instruction}],
+          temperature:0.1,max_tokens:24
         });
         const modelText=response.choices?.[0]?.message?.content||'';
-        usedAI=parseModelDesign(modelText);
-        if(!usedAI)console.warn('Local model did not produce usable styling JSON', {finishReason:response.choices?.[0]?.finish_reason,preview:modelText.slice(0,400)});
-        if(usedAI)mode='Local WebGPU AI design';
+        const matched=modelText.toLowerCase().match(/\\b(lightning|checker|ribbons|slashes|burst|chevrons|none)\\b/);
+        if(matched) {
+          applyDesign({...parsePrompt(prompt),pattern:matched[1]});
+          usedAI=true;mode='Local WebGPU AI pattern suggestion + rule-based palette';
+        } else console.warn('Local AI pattern response unusable; applying labeled rule-based fallback',modelText.slice(0,120));
       } else {
         const api=window.LanguageModel;
         if(api && typeof api.availability==='function') {
