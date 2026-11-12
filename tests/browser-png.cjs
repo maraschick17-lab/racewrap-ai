@@ -25,6 +25,21 @@ const base=process.env.BASE_URL||'https://racewrap-ai-studio.onrender.com';
   assert.equal(png.subarray(0,8).toString('hex'),'89504e470d0a1a0a');
   assert.equal(png.readUInt32BE(16),800);
   assert.equal(png.readUInt32BE(20),500);
+  // Decode the actual download and confirm it contains rendered graphics, not only the white template.
+  const colored=await page.evaluate(async b64=>{
+    const im=new Image();
+    im.src='data:image/png;base64,'+b64;
+    await im.decode();
+    const canvas=document.createElement('canvas');
+    canvas.width=im.naturalWidth;canvas.height=im.naturalHeight;
+    const ctx=canvas.getContext('2d');
+    ctx.drawImage(im,0,0);
+    const rgba=ctx.getImageData(0,0,canvas.width,canvas.height).data;
+    let nonwhite=0;
+    for(let i=0;i<rgba.length;i+=4)if(rgba[i]<220||rgba[i+1]<220||rgba[i+2]<220)nonwhite++;
+    return nonwhite;
+  },png.toString('base64'));
+  assert.ok(colored>500,'PNG should include colored composition and text');
   assert.match(await page.locator('#status').innerText(),/Not print-ready/);
   assert.equal(await page.locator('#savePNG').isEnabled(),true);
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),true);
