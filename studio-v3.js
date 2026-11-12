@@ -2,7 +2,7 @@
 /* RaceWrap AI concept editor. No backend, no paid services, no production cut files. */
 (() => {
   const $ = id => document.getElementById(id);
-  const status = message => { $('status').textContent = message; };
+  const status = message => { const el = $('status'); if (el) { el.textContent = message; el.setAttribute('role','status'); el.setAttribute('aria-live','polite'); } };
   const state = { source:'', sourceType:'', sourceName:'', width:0, height:0, logo:'', logoName:'', logoType:'', pattern:'slashes', ai:false };
   const palette = {black:'#16191e',white:'#f2f4f7',red:'#e52e2e',blue:'#247ee8',green:'#25b96e',orange:'#f77922',purple:'#9b50e4',yellow:'#e8bc25',gold:'#d8a83e',silver:'#c9d2da',gray:'#737e8a'};
   const MAX_FILE = 15*1024*1024;
