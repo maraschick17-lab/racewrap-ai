@@ -18,6 +18,7 @@ const base=process.env.BASE_URL||'https://racewrap-ai-studio.onrender.com/index.
    await page.locator('#useStarter').click();
    await page.waitForFunction(()=>document.querySelector('#sourceMeta').textContent.includes('Modified concept.webp'));
    assert.match(await page.locator('#sourceMeta').innerText(),/Original visual concept only/);
+   assert.equal(await page.locator('#body').inputValue(),'modified');
    await page.locator('#number').fill('42');
    await page.locator('#panelName').fill('Left door');
    await page.locator('#tracePanel').click();
@@ -34,10 +35,12 @@ const base=process.env.BASE_URL||'https://racewrap-ai-studio.onrender.com/index.
    await page.locator('#useStarter').click();
    await page.waitForFunction(()=>document.querySelector('#sourceMeta').textContent.includes('Stock Car concept.webp'),null,{timeout:12000}).catch(async e=>{throw Error('Stock import failed: '+await page.locator('#status').innerText()+' / '+await page.locator('#starterStatus').innerText()+' / '+e.message);});
    assert.match(await page.locator('#panelStatus').innerText(),/No artwork masks/);
+   assert.equal(await page.locator('#body').inputValue(),'stock');
    assert.equal(await page.locator('#restorePrevious').isDisabled(),false);
    await page.locator('#restorePrevious').click();
    await page.waitForFunction(()=>document.querySelector('#sourceMeta').textContent.includes('Modified concept.webp'));
    assert.equal(await page.locator('#number').inputValue(),'42');
+   assert.equal(await page.locator('#body').inputValue(),'modified');
    assert.match(await page.locator('#panelStatus').innerText(),/1 artwork mask/);
    assert.match(await page.locator('#panelDimensions').innerText(),/Left door/);
    assert.equal(await page.locator('#restorePrevious').isDisabled(),true);
