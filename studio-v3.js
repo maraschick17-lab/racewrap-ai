@@ -933,7 +933,7 @@
     if(!file || file.size>20*1024*1024){status('Project must be under 20 MB');return;}
     try {
       const obj=JSON.parse(await file.text());
-      if(obj.version!==2||!obj.template||!/^data:image\/png;base64,/.test(obj.template.data))throw Error('Unsupported project');
+      if(obj.version!==2||!obj.template||!/^data:image\//.test(obj.template.data))throw Error('Unsupported project');
       if(obj.template.data.length>18*1024*1024)throw Error('Template too large');
       logoLayoutUndo=null;$('undoArrangeLogos').disabled=true;
       clearExtraLogos();state.logo='';state.logoName='';state.logoType='';$('logoGraphic').src='';$('logoGraphic').style.zIndex='20';
