@@ -14,6 +14,7 @@
   let selectedLogo = 0, nextLogoId = 1;
   const panelMasks = [];
   let draftPanel = [], tracingPanel = false;
+  let rulerPoints = [], measuringSpan = false;
   let webLLMEngine = null, webLLMModel = '';
   let draftTimer = null;
   const DRAFT_DB = 'racewrap-concept-drafts';
@@ -136,7 +137,7 @@
     $('logoGraphic').style.display=ready&&!!state.logo?'block':'none';
     for (const item of extraLogos) item.el.style.display=ready?'block':'none';
     $('patternLayer').style.display=ready&&$('pattern').value!=='none'?'block':'none';
-    drawPattern();drawPanelOverlay();scheduleAutosave();
+    drawPattern();drawPanelOverlay();drawRuler();scheduleAutosave();
   }
   function drawPattern() {
     const layer=$('patternLayer'), style=$('pattern').value, accent=$('accent').value, trim=$('trim').value;
@@ -172,9 +173,21 @@
     $('clearPanels').disabled=!panelMasks.length&&!draftPanel.length;
     $('panelStatus').textContent=tracingPanel?'Tracing: '+draftPanel.length+' point(s). Click panel corners; finish with at least 3.':panelMasks.length?panelMasks.length+' artwork mask(s) active. Pattern is clipped to traced regions.':'No artwork masks. Pattern covers the full template.';
   }
+  function drawRuler() {
+    const el=$('rulerOverlay'), coords=([x,y])=>[(x*1000).toFixed(2),(y*550).toFixed(2)];
+    const pts=rulerPoints.map(coords);
+    let markup='';
+    if(pts.length===2)markup='<line x1="'+pts[0][0]+'" y1="'+pts[0][1]+'" x2="'+pts[1][0]+'" y2="'+pts[1][1]+'" stroke="#00a6ff" stroke-width="5" stroke-dasharray="12 8"/>';
+    for(const [x,y] of pts)markup+='<circle cx="'+x+'" cy="'+y+'" r="9" fill="#00a6ff" stroke="white" stroke-width="3"/>';
+    el.innerHTML=markup;el.style.display=measuringSpan||pts.length?'block':'none';el.style.pointerEvents=measuringSpan?'all':'none';
+    $('measureSpan').textContent=measuringSpan?'Cancel reference ruler':'Pick 2 reference points';
+    $('clearSpan').disabled=!pts.length;
+    const pixels=pts.length===2?Math.hypot((rulerPoints[1][0]-rulerPoints[0][0])*state.width,(rulerPoints[1][1]-rulerPoints[0][1])*state.height):0;
+    $('rulerStatus').textContent=measuringSpan?'Tap '+(2-pts.length)+' point(s) on the template.':pts.length===2?'Measured reference: '+pixels.toFixed(1)+' image px over '+$('inch').value+' in. Check both endpoints.':pts.length?'First point selected.':'No reference points selected.';
+  }
   function setTemplate(result,name,kind) {
     state.source=result.data;state.width=result.width;state.height=result.height;state.sourceName=name;state.sourceType=kind;
-    panelMasks.length=0;draftPanel=[];tracingPanel=false;
+    panelMasks.length=0;draftPanel=[];tracingPanel=false;rulerPoints=[];measuringSpan=false;drawRuler();
     image.src=state.source;image.style.display='block';$('empty').style.display='none';
     canvas.style.aspectRatio=state.width+' / '+state.height;canvas.style.minHeight='0';
     overlays.forEach(el=>{el.style.left=el=== $('graphic')?'34%':el===$('logoGraphic')?'55%':'32%';el.style.top=el=== $('graphic')?'35%':el===$('logoGraphic')?'57%':'72%';});
@@ -422,7 +435,7 @@
     for(const id of ['prompt','body','number','base','accent','trim','sponsor','px','inch','pattern','patternOpacity','patternAngle','patternScale','patternX','patternY','logoSize'])fields[id]=$(id).value;
     const positions={};
     for(const el of overlays)positions[el.id]={left:el.style.left,top:el.style.top,width:el.style.width,zIndex:el.style.zIndex};
-    return {version:2,fields,positions,template:{data:state.source,name:state.sourceName,type:state.sourceType,width:state.width,height:state.height},logo:{data:state.logo,name:state.logoName,type:state.logoType},extraLogos:extraLogos.map(item=>({data:item.data,name:item.name,type:item.type,left:item.el.style.left,top:item.el.style.top,width:item.el.style.width,zIndex:item.el.style.zIndex})),panelMasks:panelMasks.map(p=>p.map(([x,y])=>[x,y]))};
+    return {version:2,fields,positions,template:{data:state.source,name:state.sourceName,type:state.sourceType,width:state.width,height:state.height},logo:{data:state.logo,name:state.logoName,type:state.logoType},extraLogos:extraLogos.map(item=>({data:item.data,name:item.name,type:item.type,left:item.el.style.left,top:item.el.style.top,width:item.el.style.width,zIndex:item.el.style.zIndex})),panelMasks:panelMasks.map(p=>p.map(([x,y])=>[x,y])),rulerPoints:rulerPoints.map(([x,y])=>[x,y])};
   }
   function saveProject() {
     if(!state.source){status('Import a template before saving a project.');return;}
@@ -457,12 +470,32 @@
       if(Array.isArray(obj.panelMasks))for(const p of obj.panelMasks.slice(0,12)) {
         if(Array.isArray(p)&&p.length>=3&&p.length<=60&&p.every(point=>Array.isArray(point)&&point.length===2&&point.every(v=>typeof v==='number'&&Number.isFinite(v)&&v>=0&&v<=1)))panelMasks.push(p);
       }
+      if(Array.isArray(obj.rulerPoints)&&obj.rulerPoints.length===2&&obj.rulerPoints.every(p=>Array.isArray(p)&&p.length===2&&p.every(n=>typeof n==='number'&&Number.isFinite(n)&&n>=0&&n<=1)))rulerPoints=obj.rulerPoints.map(p=>p.slice());
       refresh();selectLogo(0);status('Editable project restored with '+logoItems().length+' sponsor logo(s).');
     } catch(err){status('Project load failed: '+err.message);}
   }
+  $('rulerOverlay').addEventListener('pointerdown',e=>{
+    if(!measuringSpan||!state.source)return;
+    const box=canvas.getBoundingClientRect();
+    rulerPoints.push([clamp((e.clientX-box.left)/box.width,0,1),clamp((e.clientY-box.top)/box.height,0,1)]);
+    if(rulerPoints.length===2){
+      const units=Math.hypot((rulerPoints[1][0]-rulerPoints[0][0])*state.width,(rulerPoints[1][1]-rulerPoints[0][1])*state.height);
+      if(units>=2){$('px').value=units.toFixed(2);measuringSpan=false;calibrate();scheduleAutosave();status('Reference ruler calibrated. Verify actual measured span; not a print-fitment measurement.');}
+      else rulerPoints.pop();
+    }
+    drawRuler();e.preventDefault();
+  });
+  $('measureSpan').addEventListener('click',()=>{
+    if(!state.source){status('Import a licensed template before using the reference ruler.');return;}
+    measuringSpan=!measuringSpan;
+    if(measuringSpan){rulerPoints=[];tracingPanel=false;draftPanel=[];drawPanelOverlay();}
+    drawRuler();
+  });
+  $('clearSpan').addEventListener('click',()=>{rulerPoints=[];measuringSpan=false;drawRuler();scheduleAutosave();});
   function calibrate() {
     const units=Number($('px').value),inches=Number($('inch').value);
-    $('calibration').textContent=units>0&&inches>0?'Reference scale: '+(units/inches).toFixed(3)+' template units/in · unverified for print':'Enter positive measurements for reference calibration';
+    $('calibration').textContent=units>0&&inches>0?'Reference: '+(units/inches).toFixed(3)+' image px/in · canvas approx '+(state.width/(units/inches)||0).toFixed(1)+' × '+(state.height/(units/inches)||0).toFixed(1)+' in including margins; NOT print-fitment':'Enter positive reference measurements in pixels and inches';
+    drawRuler();
   }
   for(const id of ['number','base','accent','trim','sponsor','pattern','patternOpacity','patternAngle','patternScale','patternX','patternY'])$(id).addEventListener('input',refresh);
   for(const id of ['prompt','body','px','inch','logoSize'])$(id).addEventListener('input',scheduleAutosave);
@@ -502,7 +535,7 @@
   });
   $('tracePanel').addEventListener('click',()=>{
     if(!state.source){status('Import a licensed body template before tracing panels.');return;}
-    tracingPanel=!tracingPanel;draftPanel=[];drawPanelOverlay();
+    tracingPanel=!tracingPanel;draftPanel=[];if(tracingPanel){measuringSpan=false;drawRuler();}drawPanelOverlay();
   });
   $('finishPanel').addEventListener('click',()=>{
     if(draftPanel.length<3)return;
