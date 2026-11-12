@@ -820,6 +820,18 @@
     $('slotLoad'+i).addEventListener('click',()=>loadDesignSlot(i));
   }
   for(let i=0;i<3;i++)$('layout'+i).addEventListener('click',()=>chooseLayout(i));
+  const promptPresets={
+    classic:'Traditional dirt late model race wrap, deep black base, bright red lightning graphics, white trim, bold number 17, sponsor logos kept legible.',
+    modern:'Modern dirt late model race wrap, dark blue base, silver flowing ribbons and sharp white accents, bold number 17, clean space for sponsors.',
+    retro:'Retro dirt late model throwback wrap, orange base, cream chevron graphics, black accents, classic number 17, high-contrast sponsor placement.'
+  };
+  document.querySelectorAll('[data-prompt-preset]').forEach(button=>button.addEventListener('click',()=>{
+    const preset=promptPresets[button.dataset.promptPreset];
+    if(!preset)return;
+    $('prompt').value=preset;
+    $('prompt').focus();
+    status('Starting prompt loaded. Edit it or select Create design. This preset is not AI-generated.');
+  }));
   $('generate').addEventListener('click',generate);
   $('surprise').addEventListener('click',()=>{$('prompt').value='Blue and silver dirt late model number 21 with bold lightning graphics';generate();});
   $('save').addEventListener('click',exportSVG);
