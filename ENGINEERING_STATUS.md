@@ -1,6 +1,6 @@
 # RaceWrap AI engineering status
 
-Last verified: 2026-11-12 01:52 (America/Chicago). Zero new spending. Render service: `srv-dbqgfa142hec73d2ejp0`, workspace `tea-dbpmpf59fdbs73fcqh10`. Live: https://racewrap-ai-studio.onrender.com
+Last verified: 2026-11-12 02:55 (America/Chicago). Zero new spending. Render service: `srv-dbqgfa142hec73d2ejp0`, workspace `tea-dbpmpf59fdbs73fcqh10`. Live: https://racewrap-ai-studio.onrender.com
 
 ## Active app
 - `index.html` loads **`studio-v3.js`** with a version query. `studio-v2.js` is historical; do not edit it expecting the live UI to change. Bump the script query/version when updating the active JS to avoid stale edge/browser caching.
@@ -9,6 +9,7 @@ Last verified: 2026-11-12 01:52 (America/Chicago). Zero new spending. Render ser
 - Drag and resize up to eight sponsor logos; SVG/PNG/JPG/WebP normalized to PNG in browser. Number and sponsor text are draggable.
 - Trace one or more polygon artwork masks manually; patterns are clipped to these concept regions. **Not verified production panel cut paths.**
 - Export concept SVG and editable JSON project, including all logos and polygon masks. Individual first-logo width now persists correctly even when another logo is selected at save time. Reference scale inputs are informational, not a verified print-scale export.
+- **Three reversible layout comparisons:** Original, Flowing and Compact procedurally vary the current design's pattern, direction, scale, opacity and position without changing sponsors, race number or colors. Capturing a baseline after genuine on-device AI output lets users compare variants of AI-selected controls, but the variants themselves are deterministic, not AI image generation. Comparison baseline/choice persist in project JSON and browser autosave. Users can recapture manually adjusted styling.
 - Pattern composition supports flowing ribbons and radial burst, manual direction (-75° to 75°), scale (50–180%), opacity, and new horizontal/vertical placement sliders (0–100). On-device AI JSON can choose these controls, but actual model inference with the latest expanded schema has not yet been retested.
 - Selected sponsor logos have accessible 1%-step arrow nudge buttons for touch and fine positioning; placements persist in project JSON and SVG exports.
 - A touch-friendly two-point reference ruler can calibrate source-image pixels to a user-entered measured span in inches. It shows approximate full-image dimensions, includes margins, and persists its endpoints in editable JSON/autosave. This is a reference measurement, not verified panel fitment or print scale.
@@ -24,15 +25,16 @@ Last verified: 2026-11-12 01:52 (America/Chicago). Zero new spending. Render ser
 - Five browser regression suites now pass: smoke, recovery, composition and new sponsor-layer stacking/export/restore tests. All tested on the authorized Windows PC with Chrome headless; no page JS errors or horizontal overflow at 390px. The new layer suite checks three logos, moving the top logo backward, SVG paint order and JSON restoration.
 - New `tests/browser-ruler.cjs` **PASS** in Chrome with simulated 390px touch viewport: imported licensed SVG, tapped two endpoints, verified ~400 image px over a 20-inch span, saved and restored endpoints, verified ruler excluded from concept SVG, no horizontal overflow, zero page errors. Initial test failure was caused by tapping off-screen coordinates; corrected test to scroll the canvas into view before touch simulation. Existing four browser suites reran and all **PASS** after the ruler change.
 - New `tests/browser-panel-dimensions.cjs` **PASS** in Chrome headless at simulated 390px touch viewport: traced named rectangle, calibrated ruler, verified 20 × 10 in bounding box and 200 in² area, JSON save/restore, no horizontal overflow, no page errors. Existing five browser suites reran and **all PASS** (six total).
+- `tests/browser-layouts.cjs` **PASS** on Chrome headless with simulated 390px touch viewport: confirmed three distinct layouts, exact restoration of original controls, JSON project round-trip of the selected layout, no horizontal overflow, zero page errors. Also reran `tests/browser-smoke.cjs` **PASS** after the change, and live JS passed `node --check`. Live Render deploy checked for commit `3158a9c` (subsequent test/status-only commits may trigger redeploys).
 - WebGPU model was downloaded and **actual AI inference completed successfully** in Chrome headless: the app displayed `Local WebGPU AI design applied`. First load plus inference took approximately two minutes in that environment. This does not establish compatibility with iOS Safari or every GPU.
 - Render deployment must be checked after every change; do not equate a GitHub commit with a verified live deployment.
 
 ## Next highest-value engineering work
-1. Test real WebGPU inference against the expanded placement JSON schema; improve actual AI-generated visual composition beyond fixed pattern presets while retaining the on-device/no-fee path.
+1. Test real WebGPU inference against the expanded placement JSON schema; improve actual AI-generated visual composition beyond fixed pattern presets. Three layout comparisons now offer a fast reversible choice but do not create novel AI artwork.
 2. Establish commercial reuse permission for a professionally drawn Five Star / Rocket template, or accept user-supplied licensed panel vectors; never substitute the rejected hand-drawn silhouette.
 3. Validate the new named per-panel **reference estimates** against independent physical measurements, then obtain true licensed per-panel geometry and implement verified 1:1 cut-file exports, bleed, safe zones, and print-shop validation. **Do not enable production checkout until verified.**
 4. Test iPhone touch drag/drop and WebGPU support on real devices; provide graceful fallback.
 5. Improve cross-device project transfer, autosave quota warnings, layer ordering UX, and direct touch interaction tests on real iPhone.
 
 ## Testing
-Run `tests/browser-smoke.cjs`, `tests/browser-recovery.cjs`, `tests/browser-composition.cjs`, `tests/browser-layers.cjs`, , `tests/browser-ruler.cjs`, and `tests/browser-panel-dimensions.cjs` with Node.js, Playwright and Chrome/Chromium. Optional environment variables: `PLAYWRIGHT_MODULE`, `CHROME_PATH`, `BASE_URL`. No paid test service required.
+Run `tests/browser-smoke.cjs`, `tests/browser-recovery.cjs`, `tests/browser-composition.cjs`, `tests/browser-layers.cjs`, `tests/browser-ruler.cjs`, and `tests/browser-panel-dimensions.cjs`, and `tests/browser-layouts.cjs` with Node.js, Playwright and Chrome/Chromium. Optional environment variables: `PLAYWRIGHT_MODULE`, `CHROME_PATH`, `BASE_URL`. No paid test service required.
