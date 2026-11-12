@@ -11,6 +11,8 @@
   const overlays = [$('graphic'),$('sponsorGraphic'),$('logoGraphic')];
   const extraLogos = [];
   let selectedLogo = 0, nextLogoId = 1;
+  const panelMasks = [];
+  let draftPanel = [], tracingPanel = false;
   const percent = (value,total) => total ? 100*value/total : 0;
   const clamp = (x,min,max) => Math.min(max,Math.max(min,x));
   const safe = value => String(value).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&apos;');
@@ -86,7 +88,7 @@
     $('logoGraphic').style.display=ready&&!!state.logo?'block':'none';
     for (const item of extraLogos) item.el.style.display=ready?'block':'none';
     $('patternLayer').style.display=ready&&$('pattern').value!=='none'?'block':'none';
-    drawPattern();
+    drawPattern();drawPanelOverlay();
   }
   function drawPattern() {
     const layer=$('patternLayer'), style=$('pattern').value, accent=$('accent').value, trim=$('trim').value;
@@ -95,11 +97,31 @@
     if(style==='chevrons') shapes='<path d="M30 390 L300 95 L390 95 L125 390 Z M180 390 L450 95 L495 95 L230 390 Z" fill="'+accent+'"/>';
     if(style==='lightning') shapes='<path d="M50 400 L350 90 L260 260 L440 230 L130 460 L230 300 Z" fill="'+accent+'" stroke="'+trim+'" stroke-width="9"/>';
     if(style==='checker') {for(let r=0;r<3;r++)for(let c=0;c<8;c++)if((r+c)%2===0)shapes+='<rect x="'+(60+c*46)+'" y="'+(300+r*46)+'" width="46" height="46" fill="'+accent+'"/>';}
-    layer.innerHTML='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 550" preserveAspectRatio="none" width="100%" height="100%">'+shapes+'</svg>';
+    const masks=panelMasks.map(p=>'<polygon points="'+p.map(([x,y])=>(x*1000).toFixed(2)+','+(y*550).toFixed(2)).join(' ')+'"/>').join('');
+    const clipped=panelMasks.length?'<defs><clipPath id="racewrapPanelClip">'+masks+'</clipPath></defs><g clip-path="url(#racewrapPanelClip)">'+shapes+'</g>':shapes;
+    layer.innerHTML='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 550" preserveAspectRatio="none" width="100%" height="100%">'+clipped+'</svg>';
     layer.style.opacity=String(Number($('patternOpacity').value)/100);
+  }
+  function drawPanelOverlay() {
+    const el=$('panelOverlay'), points=p=>p.map(([x,y])=>(x*1000).toFixed(2)+','+(y*550).toFixed(2)).join(' ');
+    let svg=panelMasks.map(p=>'<polygon points="'+points(p)+'" fill="#ff533d" fill-opacity=".10" stroke="#ff533d" stroke-width="2" stroke-dasharray="8 5"/>').join('');
+    if(draftPanel.length) {
+      svg+='<polyline points="'+points(draftPanel)+'" fill="none" stroke="#00b8ff" stroke-width="3"/>';
+      svg+=draftPanel.map(([x,y])=>'<circle cx="'+(x*1000).toFixed(2)+'" cy="'+(y*550).toFixed(2)+'" r="6" fill="#00b8ff"/>').join('');
+    }
+    el.innerHTML=svg;
+    el.style.display=(tracingPanel||panelMasks.length)?'block':'none';
+    el.style.pointerEvents=tracingPanel?'auto':'none';
+    el.style.zIndex=tracingPanel?'10':'1';
+    $('tracePanel').textContent=tracingPanel?'Cancel tracing':'Trace panel';
+    $('finishPanel').disabled=draftPanel.length<3;
+    $('undoPoint').disabled=!draftPanel.length;
+    $('clearPanels').disabled=!panelMasks.length&&!draftPanel.length;
+    $('panelStatus').textContent=tracingPanel?'Tracing: '+draftPanel.length+' point(s). Click panel corners; finish with at least 3.':panelMasks.length?panelMasks.length+' artwork mask(s) active. Pattern is clipped to traced regions.':'No artwork masks. Pattern covers the full template.';
   }
   function setTemplate(result,name,kind) {
     state.source=result.data;state.width=result.width;state.height=result.height;state.sourceName=name;state.sourceType=kind;
+    panelMasks.length=0;draftPanel=[];tracingPanel=false;
     image.src=state.source;image.style.display='block';$('empty').style.display='none';
     canvas.style.aspectRatio=state.width+' / '+state.height;canvas.style.minHeight='0';
     overlays.forEach(el=>{el.style.left=el=== $('graphic')?'34%':el===$('logoGraphic')?'55%':'32%';el.style.top=el=== $('graphic')?'35%':el===$('logoGraphic')?'57%':'72%';});
@@ -277,7 +299,7 @@
     for(const id of ['prompt','body','number','base','accent','trim','sponsor','px','inch','pattern','patternOpacity','logoSize'])fields[id]=$(id).value;
     const positions={};
     for(const el of overlays)positions[el.id]={left:el.style.left,top:el.style.top};
-    return {version:2,fields,positions,template:{data:state.source,name:state.sourceName,type:state.sourceType,width:state.width,height:state.height},logo:{data:state.logo,name:state.logoName,type:state.logoType},extraLogos:extraLogos.map(item=>({data:item.data,name:item.name,type:item.type,left:item.el.style.left,top:item.el.style.top,width:item.el.style.width}))};
+    return {version:2,fields,positions,template:{data:state.source,name:state.sourceName,type:state.sourceType,width:state.width,height:state.height},logo:{data:state.logo,name:state.logoName,type:state.logoType},extraLogos:extraLogos.map(item=>({data:item.data,name:item.name,type:item.type,left:item.el.style.left,top:item.el.style.top,width:item.el.style.width})),panelMasks:panelMasks.map(p=>p.map(([x,y])=>[x,y]))};
   }
   function saveProject() {
     if(!state.source){status('Import a template before saving a project.');return;}
@@ -305,6 +327,9 @@
       }
       for(const [id,pos] of Object.entries(obj.positions||{}))if(overlays.some(el=>el.id===id)&&pos&&/^\d+(?:\.\d+)?%$/.test(pos.left)&&/^\d+(?:\.\d+)?%$/.test(pos.top)){$(id).style.left=pos.left;$(id).style.top=pos.top;}
       $('logoGraphic').style.width=$('logoSize').value+'%';
+      if(Array.isArray(obj.panelMasks))for(const p of obj.panelMasks.slice(0,12)) {
+        if(Array.isArray(p)&&p.length>=3&&p.length<=60&&p.every(point=>Array.isArray(point)&&point.length===2&&point.every(v=>typeof v==='number'&&Number.isFinite(v)&&v>=0&&v<=1)))panelMasks.push(p);
+      }
       refresh();selectLogo(0);status('Editable project restored with '+logoItems().length+' sponsor logo(s).');
     } catch(err){status('Project load failed: '+err.message);}
   }
@@ -315,6 +340,23 @@
   for(const id of ['number','base','accent','trim','sponsor','pattern','patternOpacity'])$(id).addEventListener('input',refresh);
   for(const id of ['px','inch'])$(id).addEventListener('input',calibrate);
   $('logoSize').addEventListener('input',()=>{const item=logoItems()[selectedLogo];if(item)item.el.style.width=$('logoSize').value+'%';});
+  $('panelOverlay').addEventListener('pointerdown',e=>{
+    if(!tracingPanel||!state.source)return;
+    const box=canvas.getBoundingClientRect();
+    draftPanel.push([clamp((e.clientX-box.left)/box.width,0,1),clamp((e.clientY-box.top)/box.height,0,1)]);
+    drawPanelOverlay();e.preventDefault();
+  });
+  $('tracePanel').addEventListener('click',()=>{
+    if(!state.source){status('Import a licensed body template before tracing panels.');return;}
+    tracingPanel=!tracingPanel;draftPanel=[];drawPanelOverlay();
+  });
+  $('finishPanel').addEventListener('click',()=>{
+    if(draftPanel.length<3)return;
+    panelMasks.push(draftPanel);draftPanel=[];tracingPanel=false;drawPattern();drawPanelOverlay();
+    status('Artwork mask added. This is not a production cut path.');
+  });
+  $('undoPoint').addEventListener('click',()=>{draftPanel.pop();drawPanelOverlay();});
+  $('clearPanels').addEventListener('click',()=>{panelMasks.length=0;draftPanel=[];drawPattern();drawPanelOverlay();});
   $('generate').addEventListener('click',generate);
   $('surprise').addEventListener('click',()=>{$('prompt').value='Blue and silver dirt late model number 21 with bold lightning graphics';generate();});
   $('save').addEventListener('click',exportSVG);
