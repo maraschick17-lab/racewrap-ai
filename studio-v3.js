@@ -147,7 +147,8 @@
     if(style==='ribbons') {for(let i=0;i<6;i++)shapes+='<path d="M'+(25+i*32)+' 450 Q'+(150+i*32)+' 260 '+(280+i*32)+' 70" fill="none" stroke="'+(i%2?trim:accent)+'" stroke-width="'+(i%2?12:22)+'" stroke-linecap="round"/>';}
     if(style==='burst') {for(let i=0;i<9;i++){const a=(-72+i*18)*Math.PI/180,b=a+0.13;shapes+='<path d="M120 380 L'+(120+420*Math.cos(a)).toFixed(1)+' '+(380+420*Math.sin(a)).toFixed(1)+' L'+(120+420*Math.cos(b)).toFixed(1)+' '+(380+420*Math.sin(b)).toFixed(1)+' Z" fill="'+(i%2?trim:accent)+'"/>';}}
     const angle=clamp(Number($('patternAngle').value)||0,-75,75),scale=clamp(Number($('patternScale').value)||100,50,180)/100;
-    shapes='<g transform="translate(270 280) rotate('+angle+') scale('+scale+') translate(-270 -280)">'+shapes+'</g>';
+    const dx=(clamp(Number($('patternX').value)||0,0,100)-35)*10,dy=(clamp(Number($('patternY').value)||0,0,100)-50)*5.5;
+    shapes='<g transform="translate('+dx.toFixed(2)+' '+dy.toFixed(2)+') translate(270 280) rotate('+angle+') scale('+scale+') translate(-270 -280)">'+shapes+'</g>';
     const masks=panelMasks.map(p=>'<polygon points="'+p.map(([x,y])=>(x*1000).toFixed(2)+','+(y*550).toFixed(2)).join(' ')+'"/>').join('');
     const clipped=panelMasks.length?'<defs><clipPath id="racewrapPanelClip">'+masks+'</clipPath></defs><g clip-path="url(#racewrapPanelClip)">'+shapes+'</g>':shapes;
     layer.innerHTML='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 550" preserveAspectRatio="none" width="100%" height="100%">'+clipped+'</svg>';
@@ -283,7 +284,7 @@
     for(const field of ['base','accent','trim'])if(/^#[0-9a-f]{6}$/i.test(design[field]||''))$(field).value=design[field];
     if(design.number)$('number').value=String(design.number).replace(/[^a-zA-Z0-9]/g,'').slice(0,4);
     if(['none','slashes','chevrons','lightning','checker','ribbons','burst'].includes(design.pattern))$('pattern').value=design.pattern;
-    for(const [key,min,max] of [['patternAngle',-75,75],['patternScale',50,180],['patternOpacity',5,95]]) {
+    for(const [key,min,max] of [['patternAngle',-75,75],['patternScale',50,180],['patternOpacity',5,95],['patternX',0,100],['patternY',0,100]]) {
       if(design[key]!==undefined && design[key]!==null && design[key]!=='' && Number.isFinite(Number(design[key])))$(key).value=clamp(Number(design[key]),min,max);
     }
     refresh();
@@ -323,7 +324,7 @@
     if(!match)return false;
     const result=JSON.parse(match[0]);
     if(!result||typeof result!=='object'||Array.isArray(result))return false;
-    if(!['base','accent','trim','number','pattern','patternAngle','patternScale','patternOpacity'].some(key=>result[key]!==undefined))return false;
+    if(!['base','accent','trim','number','pattern','patternAngle','patternScale','patternOpacity','patternX','patternY'].some(key=>result[key]!==undefined))return false;
     applyDesign(result);return true;
   }
   async function generate() {
@@ -332,12 +333,12 @@
     $('generate').disabled=true;
     try {
       let usedAI=false, mode='';
-      const instruction='You are a racecar wrap design assistant. Return ONLY a JSON object with keys base, accent, trim (hex RGB colors), number (1-4 characters), pattern (one of none, slashes, chevrons, lightning, checker, ribbons, burst), patternAngle (degrees -75 to 75), patternScale (percent 50 to 180), patternOpacity (percent 5 to 95). Make a cohesive racecar composition with balanced visual weight and legible sponsor logos. No other text. User request: '+prompt;
+      const instruction='You are a racecar wrap design assistant. Return ONLY a JSON object with keys base, accent, trim (hex RGB colors), number (1-4 characters), pattern (one of none, slashes, chevrons, lightning, checker, ribbons, burst), patternAngle (degrees -75 to 75), patternScale (percent 50 to 180), patternOpacity (percent 5 to 95), patternX (horizontal position 0 to 100), patternY (vertical position 0 to 100). Make a cohesive racecar composition with balanced visual weight and legible sponsor logos. No other text. User request: '+prompt;
       if(webLLMEngine) {
         status('Generating with locally loaded WebGPU AI…');
         const response=await webLLMEngine.chat.completions.create({
           messages:[{role:'system',content:'Return only a compact JSON object describing racecar wrap styling.'},{role:'user',content:instruction}],
-          temperature:0.2,max_tokens:180
+          temperature:0.2,max_tokens:220
         });
         usedAI=parseModelDesign(response.choices?.[0]?.message?.content||'');
         if(usedAI)mode='Local WebGPU AI design';
@@ -399,7 +400,7 @@
   }
   function project() {
     const fields={};
-    for(const id of ['prompt','body','number','base','accent','trim','sponsor','px','inch','pattern','patternOpacity','patternAngle','patternScale','logoSize'])fields[id]=$(id).value;
+    for(const id of ['prompt','body','number','base','accent','trim','sponsor','px','inch','pattern','patternOpacity','patternAngle','patternScale','patternX','patternY','logoSize'])fields[id]=$(id).value;
     const positions={};
     for(const el of overlays)positions[el.id]={left:el.style.left,top:el.style.top,width:el.style.width};
     return {version:2,fields,positions,template:{data:state.source,name:state.sourceName,type:state.sourceType,width:state.width,height:state.height},logo:{data:state.logo,name:state.logoName,type:state.logoType},extraLogos:extraLogos.map(item=>({data:item.data,name:item.name,type:item.type,left:item.el.style.left,top:item.el.style.top,width:item.el.style.width})),panelMasks:panelMasks.map(p=>p.map(([x,y])=>[x,y]))};
@@ -440,10 +441,23 @@
     const units=Number($('px').value),inches=Number($('inch').value);
     $('calibration').textContent=units>0&&inches>0?'Reference scale: '+(units/inches).toFixed(3)+' template units/in · unverified for print':'Enter positive measurements for reference calibration';
   }
-  for(const id of ['number','base','accent','trim','sponsor','pattern','patternOpacity','patternAngle','patternScale'])$(id).addEventListener('input',refresh);
+  for(const id of ['number','base','accent','trim','sponsor','pattern','patternOpacity','patternAngle','patternScale','patternX','patternY'])$(id).addEventListener('input',refresh);
   for(const id of ['prompt','body','px','inch','logoSize'])$(id).addEventListener('input',scheduleAutosave);
   for(const id of ['px','inch'])$(id).addEventListener('input',calibrate);
   $('logoSize').addEventListener('input',()=>{const item=logoItems()[selectedLogo];if(item)item.el.style.width=$('logoSize').value+'%';});
+  // Small, accessible tap targets for accurate positioning on touch devices.
+  for(const [id,axis,step] of [['logoLeft','left',-1],['logoRight','left',1],['logoUp','top',-1],['logoDown','top',1]]) {
+    $(id).addEventListener('click',()=>{
+      const item=logoItems()[selectedLogo];
+      if(!item||!state.source){status('Add a sponsor logo and body template first.');return;}
+      const el=item.el, current=parseFloat(el.style[axis])||0;
+      const max=axis==='left'?Math.max(0,100-(parseFloat(el.style.width)||22)):100;
+      el.style[axis]=clamp(current+step,0,max)+'%';
+      scheduleAutosave();
+      status('Sponsor logo moved '+(step<0?'back':'forward')+' 1% along '+axis+'.');
+    });
+  }
+
   $('panelOverlay').addEventListener('pointerdown',e=>{
     if(!tracingPanel||!state.source)return;
     const box=canvas.getBoundingClientRect();
