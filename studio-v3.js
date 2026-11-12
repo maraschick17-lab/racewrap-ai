@@ -14,6 +14,52 @@
   const panelMasks = [];
   let draftPanel = [], tracingPanel = false;
   let webLLMEngine = null, webLLMModel = '';
+  let draftTimer = null;
+  const DRAFT_DB = 'racewrap-concept-drafts';
+  function openDraftDB() {
+    return new Promise((resolve,reject)=>{
+      if(!window.indexedDB)return reject(Error('Browser storage unavailable'));
+      const req=indexedDB.open(DRAFT_DB,1);
+      req.onupgradeneeded=()=>{if(!req.result.objectStoreNames.contains('drafts'))req.result.createObjectStore('drafts');};
+      req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error||Error('Storage unavailable'));
+    });
+  }
+  async function draftAction(mode,value) {
+    const db=await openDraftDB();
+    try {
+      return await new Promise((resolve,reject)=>{
+        const tx=db.transaction('drafts',mode==='read'?'readonly':'readwrite');
+        const store=tx.objectStore('drafts');
+        const req=mode==='read'?store.get('latest'):mode==='delete'?store.delete('latest'):store.put(value,'latest');
+        req.onsuccess=()=>resolve(req.result);
+        req.onerror=()=>reject(req.error||Error('Draft operation failed'));
+        tx.onerror=()=>reject(tx.error||Error('Storage failed'));
+      });
+    } finally {db.close();}
+  }
+  function scheduleAutosave() {
+    if(!state.source)return;
+    clearTimeout(draftTimer);
+    draftTimer=setTimeout(async()=>{
+      try {
+        const json=JSON.stringify(project());
+        if(json.length>30*1024*1024)throw Error('Project exceeds 30 MB browser autosave limit');
+        const savedAt=Date.now();
+        await draftAction('write',{json,savedAt});
+        $('autosaveStatus').textContent='Draft saved in this browser at '+new Date(savedAt).toLocaleTimeString()+'.';
+        $('recoverDraft').disabled=false;$('clearDraft').disabled=false;
+      } catch(err){$('autosaveStatus').textContent='Autosave unavailable: '+err.message+'. Download project JSON instead.';}
+    },1300);
+  }
+  async function checkDraft() {
+    try {
+      const draft=await draftAction('read');
+      if(draft&&draft.json) {
+        $('recoverDraft').disabled=false;$('clearDraft').disabled=false;
+        $('autosaveStatus').textContent='Saved browser draft found ('+new Date(draft.savedAt).toLocaleString()+'). Restore it to continue.';
+      } else $('autosaveStatus').textContent='Autosave will start after you import a template.';
+    } catch(err){$('autosaveStatus').textContent='Browser autosave unavailable. Use Download editable project.';}
+  }
   const percent = (value,total) => total ? 100*value/total : 0;
   const clamp = (x,min,max) => Math.min(max,Math.max(min,x));
   const safe = value => String(value).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&apos;');
@@ -89,7 +135,7 @@
     $('logoGraphic').style.display=ready&&!!state.logo?'block':'none';
     for (const item of extraLogos) item.el.style.display=ready?'block':'none';
     $('patternLayer').style.display=ready&&$('pattern').value!=='none'?'block':'none';
-    drawPattern();drawPanelOverlay();
+    drawPattern();drawPanelOverlay();scheduleAutosave();
   }
   function drawPattern() {
     const layer=$('patternLayer'), style=$('pattern').value, accent=$('accent').value, trim=$('trim').value;
@@ -98,6 +144,10 @@
     if(style==='chevrons') shapes='<path d="M30 390 L300 95 L390 95 L125 390 Z M180 390 L450 95 L495 95 L230 390 Z" fill="'+accent+'"/>';
     if(style==='lightning') shapes='<path d="M50 400 L350 90 L260 260 L440 230 L130 460 L230 300 Z" fill="'+accent+'" stroke="'+trim+'" stroke-width="9"/>';
     if(style==='checker') {for(let r=0;r<3;r++)for(let c=0;c<8;c++)if((r+c)%2===0)shapes+='<rect x="'+(60+c*46)+'" y="'+(300+r*46)+'" width="46" height="46" fill="'+accent+'"/>';}
+    if(style==='ribbons') {for(let i=0;i<6;i++)shapes+='<path d="M'+(25+i*32)+' 450 Q'+(150+i*32)+' 260 '+(280+i*32)+' 70" fill="none" stroke="'+(i%2?trim:accent)+'" stroke-width="'+(i%2?12:22)+'" stroke-linecap="round"/>';}
+    if(style==='burst') {for(let i=0;i<9;i++){const a=(-72+i*18)*Math.PI/180,b=a+0.13;shapes+='<path d="M120 380 L'+(120+420*Math.cos(a)).toFixed(1)+' '+(380+420*Math.sin(a)).toFixed(1)+' L'+(120+420*Math.cos(b)).toFixed(1)+' '+(380+420*Math.sin(b)).toFixed(1)+' Z" fill="'+(i%2?trim:accent)+'"/>';}}
+    const angle=clamp(Number($('patternAngle').value)||0,-75,75),scale=clamp(Number($('patternScale').value)||100,50,180)/100;
+    shapes='<g transform="translate(270 280) rotate('+angle+') scale('+scale+') translate(-270 -280)">'+shapes+'</g>';
     const masks=panelMasks.map(p=>'<polygon points="'+p.map(([x,y])=>(x*1000).toFixed(2)+','+(y*550).toFixed(2)).join(' ')+'"/>').join('');
     const clipped=panelMasks.length?'<defs><clipPath id="racewrapPanelClip">'+masks+'</clipPath></defs><g clip-path="url(#racewrapPanelClip)">'+shapes+'</g>':shapes;
     layer.innerHTML='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 550" preserveAspectRatio="none" width="100%" height="100%">'+clipped+'</svg>';
@@ -217,7 +267,7 @@
       const y=clamp(pointer.top+e.clientY-pointer.y,0,box.height-el.offsetHeight);
       el.style.left=percent(x,box.width)+'%';el.style.top=percent(y,box.height)+'%';
     });
-    const end=()=>{pointer=null;el.style.cursor='grab';};
+    const end=()=>{if(pointer)scheduleAutosave();pointer=null;el.style.cursor='grab';};
     el.addEventListener('pointerup',end);el.addEventListener('pointercancel',end);
   }
   overlays.forEach(draggable);
@@ -226,13 +276,16 @@
     const words=prompt.toLowerCase();
     const colors=Object.entries(palette).filter(([name])=>new RegExp('\\b'+name+'\\b').test(words));
     const number=words.match(/(?:number|#|car\s*#)\s*(\d{1,4})/);
-    const pattern=words.includes('lightning')?'lightning':words.includes('checker')?'checker':words.includes('chevron')?'chevrons':words.includes('stripe')||words.includes('slash')?'slashes':null;
+    const pattern=words.includes('lightning')?'lightning':words.includes('checker')?'checker':words.includes('chevron')?'chevrons':words.includes('ribbon')||words.includes('wave')?'ribbons':words.includes('burst')||words.includes('sunray')?'burst':words.includes('stripe')||words.includes('slash')?'slashes':null;
     return {base:colors[0]&&colors[0][1],accent:colors[1]&&colors[1][1]||colors[0]&&colors[0][1],trim:colors[2]&&colors[2][1],number:number&&number[1],pattern};
   }
   function applyDesign(design) {
     for(const field of ['base','accent','trim'])if(/^#[0-9a-f]{6}$/i.test(design[field]||''))$(field).value=design[field];
     if(design.number)$('number').value=String(design.number).replace(/[^a-zA-Z0-9]/g,'').slice(0,4);
-    if(['none','slashes','chevrons','lightning','checker'].includes(design.pattern))$('pattern').value=design.pattern;
+    if(['none','slashes','chevrons','lightning','checker','ribbons','burst'].includes(design.pattern))$('pattern').value=design.pattern;
+    for(const [key,min,max] of [['patternAngle',-75,75],['patternScale',50,180],['patternOpacity',5,95]]) {
+      if(design[key]!==undefined && design[key]!==null && design[key]!=='' && Number.isFinite(Number(design[key])))$(key).value=clamp(Number(design[key]),min,max);
+    }
     refresh();
   }
   async function enableLocalAI() {
@@ -270,7 +323,7 @@
     if(!match)return false;
     const result=JSON.parse(match[0]);
     if(!result||typeof result!=='object'||Array.isArray(result))return false;
-    if(!['base','accent','trim','number','pattern'].some(key=>result[key]))return false;
+    if(!['base','accent','trim','number','pattern','patternAngle','patternScale','patternOpacity'].some(key=>result[key]!==undefined))return false;
     applyDesign(result);return true;
   }
   async function generate() {
@@ -279,7 +332,7 @@
     $('generate').disabled=true;
     try {
       let usedAI=false, mode='';
-      const instruction='You are a racecar wrap design assistant. Return ONLY a JSON object with keys base, accent, trim (hex RGB colors), number (1-4 characters), and pattern (one of none, slashes, chevrons, lightning, checker). No other text. User request: '+prompt;
+      const instruction='You are a racecar wrap design assistant. Return ONLY a JSON object with keys base, accent, trim (hex RGB colors), number (1-4 characters), pattern (one of none, slashes, chevrons, lightning, checker, ribbons, burst), patternAngle (degrees -75 to 75), patternScale (percent 50 to 180), patternOpacity (percent 5 to 95). Make a cohesive racecar composition with balanced visual weight and legible sponsor logos. No other text. User request: '+prompt;
       if(webLLMEngine) {
         status('Generating with locally loaded WebGPU AI…');
         const response=await webLLMEngine.chat.completions.create({
@@ -346,9 +399,9 @@
   }
   function project() {
     const fields={};
-    for(const id of ['prompt','body','number','base','accent','trim','sponsor','px','inch','pattern','patternOpacity','logoSize'])fields[id]=$(id).value;
+    for(const id of ['prompt','body','number','base','accent','trim','sponsor','px','inch','pattern','patternOpacity','patternAngle','patternScale','logoSize'])fields[id]=$(id).value;
     const positions={};
-    for(const el of overlays)positions[el.id]={left:el.style.left,top:el.style.top};
+    for(const el of overlays)positions[el.id]={left:el.style.left,top:el.style.top,width:el.style.width};
     return {version:2,fields,positions,template:{data:state.source,name:state.sourceName,type:state.sourceType,width:state.width,height:state.height},logo:{data:state.logo,name:state.logoName,type:state.logoType},extraLogos:extraLogos.map(item=>({data:item.data,name:item.name,type:item.type,left:item.el.style.left,top:item.el.style.top,width:item.el.style.width})),panelMasks:panelMasks.map(p=>p.map(([x,y])=>[x,y]))};
   }
   function saveProject() {
@@ -375,8 +428,8 @@
         const pct=v=>typeof v==='string'&&/^\d+(?:\.\d+)?%$/.test(v)&&parseFloat(v)<=100?v:undefined;
         addExtraLogo(entry.data,String(entry.name||'Sponsor').slice(0,100),String(entry.type||'png'),{left:pct(entry.left),top:pct(entry.top),width:pct(entry.width)});
       }
-      for(const [id,pos] of Object.entries(obj.positions||{}))if(overlays.some(el=>el.id===id)&&pos&&/^\d+(?:\.\d+)?%$/.test(pos.left)&&/^\d+(?:\.\d+)?%$/.test(pos.top)){$(id).style.left=pos.left;$(id).style.top=pos.top;}
-      $('logoGraphic').style.width=$('logoSize').value+'%';
+      for(const [id,pos] of Object.entries(obj.positions||{}))if(overlays.some(el=>el.id===id)&&pos&&/^\d+(?:\.\d+)?%$/.test(pos.left)&&/^\d+(?:\.\d+)?%$/.test(pos.top)){$(id).style.left=pos.left;$(id).style.top=pos.top;if(typeof pos.width==='string'&&/^\d+(?:\.\d+)?%$/.test(pos.width)&&parseFloat(pos.width)<=100)$(id).style.width=pos.width;}
+      if(!obj.positions?.logoGraphic?.width)$('logoGraphic').style.width=$('logoSize').value+'%';
       if(Array.isArray(obj.panelMasks))for(const p of obj.panelMasks.slice(0,12)) {
         if(Array.isArray(p)&&p.length>=3&&p.length<=60&&p.every(point=>Array.isArray(point)&&point.length===2&&point.every(v=>typeof v==='number'&&Number.isFinite(v)&&v>=0&&v<=1)))panelMasks.push(p);
       }
@@ -387,7 +440,8 @@
     const units=Number($('px').value),inches=Number($('inch').value);
     $('calibration').textContent=units>0&&inches>0?'Reference scale: '+(units/inches).toFixed(3)+' template units/in · unverified for print':'Enter positive measurements for reference calibration';
   }
-  for(const id of ['number','base','accent','trim','sponsor','pattern','patternOpacity'])$(id).addEventListener('input',refresh);
+  for(const id of ['number','base','accent','trim','sponsor','pattern','patternOpacity','patternAngle','patternScale'])$(id).addEventListener('input',refresh);
+  for(const id of ['prompt','body','px','inch','logoSize'])$(id).addEventListener('input',scheduleAutosave);
   for(const id of ['px','inch'])$(id).addEventListener('input',calibrate);
   $('logoSize').addEventListener('input',()=>{const item=logoItems()[selectedLogo];if(item)item.el.style.width=$('logoSize').value+'%';});
   $('panelOverlay').addEventListener('pointerdown',e=>{
@@ -403,10 +457,10 @@
   $('finishPanel').addEventListener('click',()=>{
     if(draftPanel.length<3)return;
     panelMasks.push(draftPanel);draftPanel=[];tracingPanel=false;drawPattern();drawPanelOverlay();
-    status('Artwork mask added. This is not a production cut path.');
+    scheduleAutosave();status('Artwork mask added. This is not a production cut path.');
   });
   $('undoPoint').addEventListener('click',()=>{draftPanel.pop();drawPanelOverlay();});
-  $('clearPanels').addEventListener('click',()=>{panelMasks.length=0;draftPanel=[];drawPattern();drawPanelOverlay();});
+  $('clearPanels').addEventListener('click',()=>{panelMasks.length=0;draftPanel=[];drawPattern();drawPanelOverlay();scheduleAutosave();});
   $('enableAI').addEventListener('click',enableLocalAI);
   $('generate').addEventListener('click',generate);
   $('surprise').addEventListener('click',()=>{$('prompt').value='Blue and silver dirt late model number 21 with bold lightning graphics';generate();});
@@ -431,6 +485,22 @@
     refresh();selectLogo(Math.min(selectedLogo,logoItems().length-1));
     status('Sponsor logo removed. '+logoItems().length+' remaining.');
   });
+  $('recoverDraft').addEventListener('click',async()=>{
+    try {
+      clearTimeout(draftTimer);
+      const draft=await draftAction('read');
+      if(!draft?.json)throw Error('No saved draft found');
+      const file=new File([draft.json],'racewrap-autosave.json',{type:'application/json'});
+      await loadProject(file);
+      $('autosaveStatus').textContent='Browser draft restored. Continue editing or download the project JSON.';
+    }catch(err){$('autosaveStatus').textContent='Draft recovery failed: '+err.message;}
+  });
+  $('clearDraft').addEventListener('click',async()=>{
+    clearTimeout(draftTimer);
+    try {await draftAction('delete');$('recoverDraft').disabled=true;$('clearDraft').disabled=true;$('autosaveStatus').textContent='Browser draft cleared. Current canvas remains open.';}
+    catch(err){$('autosaveStatus').textContent='Cannot clear draft: '+err.message;}
+  });
+  checkDraft();
   $('aiStatus').textContent=navigator.gpu?'Optional local WebGPU AI available to download, or use rule-based styling now.':window.LanguageModel?'Built-in browser AI may be available.':'Local WebGPU AI unavailable here; rule-based styling works.';
   calibrate();refresh();renderLogoList();
 })();
