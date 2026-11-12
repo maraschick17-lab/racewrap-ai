@@ -516,8 +516,8 @@
             const session=await api.create({temperature:0.3,topK:3});
             try {
               const answer=await session.prompt(instruction);
-              usedAI=parseModelDesign(answer);
-              if(usedAI)mode='Built-in browser AI design';
+              const suggestion=String(answer||'').toLowerCase().match(/\b(lightning|checker|ribbons|slashes|burst|chevrons|none)\b/);
+              if(suggestion){applyDesign({...parsePrompt(prompt),pattern:suggestion[1]});usedAI=true;mode='Built-in browser AI pattern suggestion + rule-based palette';}
             } finally {session.destroy&&session.destroy();}
           }
         }
