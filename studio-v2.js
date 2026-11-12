@@ -30,7 +30,7 @@
       if (blocked.has(el.localName)) throw Error('SVG has unsupported active content');
       for (const attr of Array.from(el.attributes)) {
         const key=attr.name.toLowerCase(), value=attr.value.trim();
-        if (key.startsWith('on') || /javascript:|data:text\/html|@import|expression\s*\(|url\s*\(/i.test(value)) throw Error('SVG has unsafe attributes');
+        if (key.startsWith('on') || /javascript:|data:text\/html|@import|expression\s*\(|url\s*\(\s*(?!['\"]?#)/i.test(value)) throw Error('SVG has unsafe attributes');
         if ((key === 'href' || key === 'xlink:href') && !value.startsWith('#') && !value.startsWith('data:image/png;base64,') && !value.startsWith('data:image/jpeg;base64,')) throw Error('External SVG resources are not supported');
       }
     }
