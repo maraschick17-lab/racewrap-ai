@@ -9,6 +9,8 @@
   const canvas = $('canvas');
   const image = $('bodyImage');
   const overlays = [$('graphic'),$('sponsorGraphic'),$('logoGraphic')];
+  const extraLogos = [];
+  let selectedLogo = 0, nextLogoId = 1;
   const percent = (value,total) => total ? 100*value/total : 0;
   const clamp = (x,min,max) => Math.min(max,Math.max(min,x));
   const safe = value => String(value).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&apos;');
@@ -74,7 +76,6 @@
     return {data:cv.toDataURL('image/png'),width:cv.width,height:cv.height,pages:doc.numPages};
   }
   function refresh() {
-    $('logoGraphic').style.width=$('logoSize').value+'%';
     const ready=!!state.source;
     $('graphic').textContent=$('number').value.trim()||'17';
     $('graphic').style.color=$('accent').value;
@@ -83,6 +84,7 @@
     $('graphic').style.display=ready?'block':'none';
     $('sponsorGraphic').style.display=ready&&!!$('sponsor').value.trim()?'block':'none';
     $('logoGraphic').style.display=ready&&!!state.logo?'block':'none';
+    for (const item of extraLogos) item.el.style.display=ready?'block':'none';
     $('patternLayer').style.display=ready&&$('pattern').value!=='none'?'block':'none';
     drawPattern();
   }
@@ -115,18 +117,57 @@
       if(kind==='pdf' && result.pages>1)status('PDF page 1 of '+result.pages+' loaded. Use a flat licensed template; PDF is rasterized for preview.');
     }catch(err){status('Template import failed: '+err.message);}
   }
+  function logoItems() {
+    return (state.logo?[{el:$('logoGraphic'),data:state.logo,name:state.logoName,type:state.logoType}]:[]).concat(extraLogos);
+  }
+  function renderLogoList() {
+    const items=logoItems(), list=$('logoList');
+    list.replaceChildren();
+    items.forEach((item,i)=>{
+      const btn=document.createElement('button');
+      btn.type='button';btn.className='secondary';
+      btn.style.cssText='padding:7px 9px;font-size:12px;border:'+(i===selectedLogo?'2px solid #ff533d':'1px solid #48546a');
+      btn.textContent=(i+1)+'. '+item.name.slice(0,22);
+      btn.addEventListener('click',()=>selectLogo(i));
+      list.appendChild(btn);
+    });
+    $('downloadLogo').disabled=!items.length;$('removeLogo').disabled=!items.length;
+    $('logoInfo').textContent=items.length?items.length+' logo(s) · selected: '+items[Math.min(selectedLogo,items.length-1)].name+' · PNG preview':'No logo selected';
+  }
+  function selectLogo(index) {
+    const items=logoItems();
+    selectedLogo=clamp(index,0,Math.max(0,items.length-1));
+    if(items[selectedLogo]) $('logoSize').value=parseFloat(items[selectedLogo].el.style.width)||22;
+    renderLogoList();
+  }
+  function addExtraLogo(data,name,type,placement={}) {
+    const el=document.createElement('img');
+    el.id='extraLogo'+nextLogoId++;
+    el.alt='Sponsor logo: '+name;
+    el.draggable=false;
+    el.style.cssText='position:absolute;display:none;left:'+(placement.left||'40%')+';top:'+(placement.top||'45%')+';width:'+(placement.width||'22%')+';height:auto;cursor:grab;touch-action:none;user-select:none';
+    el.src=data;canvas.appendChild(el);draggable(el);
+    extraLogos.push({el,data,name,type});
+    el.addEventListener('pointerdown',()=>selectLogo(logoItems().findIndex(item=>item.el===el)));
+    return el;
+  }
+  function clearExtraLogos() {
+    for(const item of extraLogos)item.el.remove();
+    extraLogos.length=0;
+  }
   async function importLogo(file) {
     if(!file)return;
     const kind=fileKind(file);
     if(!['svg','png','jpeg','webp'].includes(kind)||file.size>MAX_FILE){$('logoInfo').textContent='Use SVG, PNG, JPG or WebP under 15 MB';return;}
+    if(logoItems().length>=8){status('Maximum 8 sponsor logos per concept.');return;}
     try {
       const result=await rasterize(file,kind,2400);
-      state.logo=result.data;state.logoName=file.name;state.logoType=kind;
-      $('logoGraphic').src=state.logo;
-      $('logoInfo').textContent=file.name+' · '+kind.toUpperCase()+' → PNG · '+result.width+'×'+result.height+' px';
-      $('downloadLogo').disabled=false;$('removeLogo').disabled=false;
-      if(kind==='jpeg') $('logoInfo').textContent+=' · JPG background remains opaque';
-      refresh();status('Sponsor logo normalized and ready to position.');
+      if(!state.logo) {
+        state.logo=result.data;state.logoName=file.name;state.logoType=kind;
+        $('logoGraphic').src=state.logo;
+      } else addExtraLogo(result.data,file.name,kind);
+      refresh();selectLogo(logoItems().length-1);
+      status('Sponsor logo '+file.name+' converted to PNG and added. '+logoItems().length+'/8 logos.');
     }catch(err){$('logoInfo').textContent='Logo import failed: '+err.message;}
   }
   function enableDrop(target,input,handler) {
@@ -134,11 +175,11 @@
     target.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();input.click();}});
     for(const type of ['dragenter','dragover'])target.addEventListener(type,e=>{e.preventDefault();target.style.borderColor='#ff533d';});
     for(const type of ['dragleave','drop'])target.addEventListener(type,e=>{e.preventDefault();target.style.borderColor='#647c99';});
-    target.addEventListener('drop',e=>{if(e.dataTransfer.files[0])handler(e.dataTransfer.files[0]);});
-    input.addEventListener('change',e=>{if(e.target.files[0])handler(e.target.files[0]);});
+    target.addEventListener('drop',e=>{const files=Array.from(e.dataTransfer.files);if(files.length)handler(files);});
+    input.addEventListener('change',e=>{const files=Array.from(e.target.files);if(files.length)handler(files);input.value='';});
   }
-  enableDrop($('dropzone'),$('logo'),importLogo);
-  enableDrop($('templateZone'),$('template'),importTemplate);
+  enableDrop($('dropzone'),$('logo'),async files=>{for(const file of files.slice(0,8))await importLogo(file);});
+  enableDrop($('templateZone'),$('template'),files=>importTemplate(files[0]));
   function draggable(el) {
     let pointer=null;
     el.addEventListener('pointerdown',e=>{
@@ -157,6 +198,7 @@
     el.addEventListener('pointerup',end);el.addEventListener('pointercancel',end);
   }
   overlays.forEach(draggable);
+  $('logoGraphic').addEventListener('pointerdown',()=>selectLogo(0));
   function parsePrompt(prompt) {
     const words=prompt.toLowerCase();
     const colors=Object.entries(palette).filter(([name])=>new RegExp('\\b'+name+'\\b').test(words));
@@ -218,10 +260,13 @@
     let markup='<svg xmlns="http://www.w3.org/2000/svg" width="'+width+'" height="'+height+'" viewBox="0 0 '+width+' '+height+'">';
     markup+='<image href="'+state.source+'" width="'+width+'" height="'+height+'"/>'+patternSvg;
     markup+=overlayMarkup($('graphic'),75)+overlayMarkup($('sponsorGraphic'),26);
-    if(state.logo && $('logoGraphic').style.display!=='none') {
-      const el=$('logoGraphic'),x=(parseFloat(el.style.left)||0)*width/100,y=(parseFloat(el.style.top)||0)*height/100;
+    for(const item of logoItems()) {
+      const el=item.el;
+      if(el.style.display==='none')continue;
+      const x=(parseFloat(el.style.left)||0)*width/100,y=(parseFloat(el.style.top)||0)*height/100;
       const w=(parseFloat(el.style.width)||22)*width/100;
-      markup+='<image href="'+state.logo+'" x="'+x+'" y="'+y+'" width="'+w+'" height="'+(w*el.naturalHeight/el.naturalWidth||w)+'"/>';
+      const h=el.naturalWidth>0?w*el.naturalHeight/el.naturalWidth:w;
+      markup+='<image href="'+item.data+'" x="'+x+'" y="'+y+'" width="'+w+'" height="'+h+'"/>';
     }
     markup+='</svg>';
     download(markup,'racewrap-concept.svg','image/svg+xml');
@@ -232,7 +277,7 @@
     for(const id of ['prompt','body','number','base','accent','trim','sponsor','px','inch','pattern','patternOpacity','logoSize'])fields[id]=$(id).value;
     const positions={};
     for(const el of overlays)positions[el.id]={left:el.style.left,top:el.style.top};
-    return {version:2,fields,positions,template:{data:state.source,name:state.sourceName,type:state.sourceType,width:state.width,height:state.height},logo:{data:state.logo,name:state.logoName,type:state.logoType}};
+    return {version:2,fields,positions,template:{data:state.source,name:state.sourceName,type:state.sourceType,width:state.width,height:state.height},logo:{data:state.logo,name:state.logoName,type:state.logoType},extraLogos:extraLogos.map(item=>({data:item.data,name:item.name,type:item.type,left:item.el.style.left,top:item.el.style.top,width:item.el.style.width}))};
   }
   function saveProject() {
     if(!state.source){status('Import a template before saving a project.');return;}
@@ -245,6 +290,7 @@
       const obj=JSON.parse(await file.text());
       if(obj.version!==2||!obj.template||!/^data:image\/png;base64,/.test(obj.template.data))throw Error('Unsupported project');
       if(obj.template.data.length>18*1024*1024)throw Error('Template too large');
+      clearExtraLogos();state.logo='';state.logoName='';state.logoType='';$('logoGraphic').src='';
       for(const [key,value] of Object.entries(obj.fields||{}))if($(key)&&typeof value==='string'&&value.length<3000)$(key).value=value;
       setTemplate({data:obj.template.data,width:Number(obj.template.width),height:Number(obj.template.height)},String(obj.template.name||'Restored template').slice(0,100),obj.template.type||'png');
       if(obj.logo&&/^data:image\/png;base64,/.test(obj.logo.data||'')) {
@@ -252,8 +298,14 @@
         $('logoGraphic').src=state.logo;$('logoInfo').textContent=state.logoName+' · restored';
         $('downloadLogo').disabled=false;$('removeLogo').disabled=false;
       }
+      for(const entry of (Array.isArray(obj.extraLogos)?obj.extraLogos.slice(0,7):[])) {
+        if(!entry||!/^data:image\/png;base64,/.test(entry.data||'')||entry.data.length>12*1024*1024)continue;
+        const pct=v=>typeof v==='string'&&/^\d+(?:\.\d+)?%$/.test(v)&&parseFloat(v)<=100?v:undefined;
+        addExtraLogo(entry.data,String(entry.name||'Sponsor').slice(0,100),String(entry.type||'png'),{left:pct(entry.left),top:pct(entry.top),width:pct(entry.width)});
+      }
       for(const [id,pos] of Object.entries(obj.positions||{}))if(overlays.some(el=>el.id===id)&&pos&&/^\d+(?:\.\d+)?%$/.test(pos.left)&&/^\d+(?:\.\d+)?%$/.test(pos.top)){$(id).style.left=pos.left;$(id).style.top=pos.top;}
-      refresh();status('Editable project restored.');
+      $('logoGraphic').style.width=$('logoSize').value+'%';
+      refresh();selectLogo(0);status('Editable project restored with '+logoItems().length+' sponsor logo(s).');
     } catch(err){status('Project load failed: '+err.message);}
   }
   function calibrate() {
@@ -262,14 +314,30 @@
   }
   for(const id of ['number','base','accent','trim','sponsor','pattern','patternOpacity'])$(id).addEventListener('input',refresh);
   for(const id of ['px','inch'])$(id).addEventListener('input',calibrate);
-  $('logoSize').addEventListener('input',()=>{$('logoGraphic').style.width=$('logoSize').value+'%';});
+  $('logoSize').addEventListener('input',()=>{const item=logoItems()[selectedLogo];if(item)item.el.style.width=$('logoSize').value+'%';});
   $('generate').addEventListener('click',generate);
   $('surprise').addEventListener('click',()=>{$('prompt').value='Blue and silver dirt late model number 21 with bold lightning graphics';generate();});
   $('save').addEventListener('click',exportSVG);
   $('saveProject').addEventListener('click',saveProject);
   $('openProject').addEventListener('change',e=>loadProject(e.target.files[0]));
-  $('downloadLogo').addEventListener('click',()=>{if(state.logo){const a=document.createElement('a');a.href=state.logo;a.download='sponsor-logo-normalized.png';a.click();}});
-  $('removeLogo').addEventListener('click',()=>{state.logo='';state.logoName='';$('logoGraphic').src='';$('logoInfo').textContent='No logo selected';$('downloadLogo').disabled=true;$('removeLogo').disabled=true;$('logo').value='';refresh();});
+  $('downloadLogo').addEventListener('click',()=>{const item=logoItems()[selectedLogo];if(item){const a=document.createElement('a');a.href=item.data;a.download='sponsor-'+(selectedLogo+1)+'-normalized.png';a.click();}});
+  $('removeLogo').addEventListener('click',()=>{
+    if(!logoItems().length)return;
+    if(selectedLogo===0&&state.logo) {
+      const next=extraLogos.shift();
+      if(next) {
+        state.logo=next.data;state.logoName=next.name;state.logoType=next.type;
+        $('logoGraphic').src=next.data;
+        for(const prop of ['left','top','width'])$('logoGraphic').style[prop]=next.el.style[prop];
+        next.el.remove();
+      } else {state.logo='';state.logoName='';state.logoType='';$('logoGraphic').src='';}
+    } else {
+      const index=selectedLogo-(state.logo?1:0);
+      const item=extraLogos.splice(index,1)[0];if(item)item.el.remove();
+    }
+    refresh();selectLogo(Math.min(selectedLogo,logoItems().length-1));
+    status('Sponsor logo removed. '+logoItems().length+' remaining.');
+  });
   $('aiStatus').textContent=window.LanguageModel?'On-device AI may be available on this browser':'On-device AI unavailable here; rule-based fallback';
-  calibrate();refresh();
+  calibrate();refresh();renderLogoList();
 })();
