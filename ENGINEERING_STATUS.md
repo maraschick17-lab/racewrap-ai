@@ -1,6 +1,6 @@
 # RaceWrap AI engineering status
 
-Last verified: 2026-11-12 00:55 (America/Chicago). Zero new spending. Render service: `srv-dbqgfa142hec73d2ejp0`, workspace `tea-dbpmpf59fdbs73fcqh10`. Live: https://racewrap-ai-studio.onrender.com
+Last verified: 2026-11-12 00:52 (America/Chicago). Zero new spending. Render service: `srv-dbqgfa142hec73d2ejp0`, workspace `tea-dbpmpf59fdbs73fcqh10`. Live: https://racewrap-ai-studio.onrender.com
 
 ## Active app
 - `index.html` loads **`studio-v3.js`** with a version query. `studio-v2.js` is historical; do not edit it expecting the live UI to change. Bump the script query/version when updating the active JS to avoid stale edge/browser caching.
