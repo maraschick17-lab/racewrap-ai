@@ -18,6 +18,7 @@ const base=process.env.BASE_URL||'https://racewrap-ai-studio.onrender.com/index.
    await page.locator('#movePrimary').click();
    assert.equal(await page.locator('#movePrimary').getAttribute('aria-pressed'),'true');
    assert.equal(await page.locator('#patternLayer').evaluate(el=>getComputedStyle(el).pointerEvents),'auto');
+   await page.locator('#patternLayer').scrollIntoViewIfNeeded();
    const bounds=await page.locator('#patternLayer').boundingBox();
    assert.ok(bounds&&bounds.width>100&&bounds.height>50);
    const beforeX=Number(await page.locator('#patternX').inputValue());
@@ -31,7 +32,10 @@ const base=process.env.BASE_URL||'https://racewrap-ai-studio.onrender.com/index.
    await page.locator('#moveSecondary').click();
    assert.equal(await page.locator('#moveSecondary').getAttribute('aria-pressed'),'true');
    const secondBefore=Number(await page.locator('#secondaryX').inputValue());
-   await page.mouse.move(x,y);await page.mouse.down();await page.mouse.move(x-bounds.width*.1,y,{steps:5});await page.mouse.up();
+   await page.locator('#patternLayer').scrollIntoViewIfNeeded();
+   const bounds2=await page.locator('#patternLayer').boundingBox();
+   const x2=bounds2.x+bounds2.width*.82,y2=bounds2.y+bounds2.height*.2;
+   await page.mouse.move(x2,y2);await page.mouse.down();await page.mouse.move(x2-bounds2.width*.1,y2,{steps:5});await page.mouse.up();
    assert.ok(Number(await page.locator('#secondaryX').inputValue())<=secondBefore-8,'secondary drag failed');
    assert.equal(Number(await page.locator('#patternX').inputValue()),primaryX,'secondary drag must not alter primary');
    const downloadPromise=page.waitForEvent('download');
