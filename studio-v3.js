@@ -13,6 +13,7 @@
   $('logoGraphic').style.zIndex='20';
   let selectedLogo = 0, nextLogoId = 1;
   const panelMasks = [];
+  const panelNames = [];
   let draftPanel = [], tracingPanel = false;
   let rulerPoints = [], measuringSpan = false;
   let webLLMEngine = null, webLLMModel = '';
@@ -164,6 +165,7 @@
       svg+=draftPanel.map(([x,y])=>'<circle cx="'+(x*1000).toFixed(2)+'" cy="'+(y*550).toFixed(2)+'" r="6" fill="#00b8ff"/>').join('');
     }
     el.innerHTML=svg;
+    updatePanelMeasurements();
     el.style.display=(tracingPanel||panelMasks.length)?'block':'none';
     el.style.pointerEvents=tracingPanel?'all':'none';
     el.style.zIndex=tracingPanel?'10':'1';
@@ -172,6 +174,27 @@
     $('undoPoint').disabled=!draftPanel.length;
     $('clearPanels').disabled=!panelMasks.length&&!draftPanel.length;
     $('panelStatus').textContent=tracingPanel?'Tracing: '+draftPanel.length+' point(s). Click panel corners; finish with at least 3.':panelMasks.length?panelMasks.length+' artwork mask(s) active. Pattern is clipped to traced regions.':'No artwork masks. Pattern covers the full template.';
+  }
+  function updatePanelMeasurements() {
+    const container=$('panelDimensions');
+    if(!container)return;
+    container.replaceChildren();
+    const scale=Number($('px').value)/Number($('inch').value);
+    const calibrated=rulerPoints.length===2 && Number.isFinite(scale) && scale>0;
+    panelMasks.forEach((points,i)=>{
+      const row=document.createElement('div');
+      row.style.cssText='border-top:1px solid #42536a;padding:9px 0;font-size:12px;color:#cbd5e1';
+      const xs=points.map(p=>p[0]),ys=points.map(p=>p[1]);
+      const w=(Math.max(...xs)-Math.min(...xs))*state.width;
+      const h=(Math.max(...ys)-Math.min(...ys))*state.height;
+      let area=0;
+      for(let j=0;j<points.length;j++){const a=points[j],b=points[(j+1)%points.length];area+=a[0]*b[1]-b[0]*a[1];}
+      area=Math.abs(area)*state.width*state.height/2;
+      const label=(panelNames[i]||'Panel '+(i+1)).slice(0,50);
+      row.textContent=label+' · '+points.length+' corners · '+(calibrated?('approx '+(w/scale).toFixed(1)+' × '+(h/scale).toFixed(1)+' in bounding box, '+(area/(scale*scale)).toFixed(1)+' in² traced area'):'use the two-point ruler for approximate dimensions');
+      container.appendChild(row);
+    });
+    if(!panelMasks.length)container.textContent='Trace a panel to see its approximate measured bounds.';
   }
   function drawRuler() {
     const el=$('rulerOverlay'), coords=([x,y])=>[(x*1000).toFixed(2),(y*550).toFixed(2)];
@@ -183,11 +206,12 @@
     $('measureSpan').textContent=measuringSpan?'Cancel reference ruler':'Pick 2 reference points';
     $('clearSpan').disabled=!pts.length;
     const pixels=pts.length===2?Math.hypot((rulerPoints[1][0]-rulerPoints[0][0])*state.width,(rulerPoints[1][1]-rulerPoints[0][1])*state.height):0;
+    updatePanelMeasurements();
     $('rulerStatus').textContent=measuringSpan?'Tap '+(2-pts.length)+' point(s) on the template.':pts.length===2?'Measured reference: '+pixels.toFixed(1)+' image px over '+$('inch').value+' in. Check both endpoints.':pts.length?'First point selected.':'No reference points selected.';
   }
   function setTemplate(result,name,kind) {
     state.source=result.data;state.width=result.width;state.height=result.height;state.sourceName=name;state.sourceType=kind;
-    panelMasks.length=0;draftPanel=[];tracingPanel=false;rulerPoints=[];measuringSpan=false;drawRuler();
+    panelMasks.length=0;panelNames.length=0;draftPanel=[];tracingPanel=false;rulerPoints=[];measuringSpan=false;drawRuler();
     image.src=state.source;image.style.display='block';$('empty').style.display='none';
     canvas.style.aspectRatio=state.width+' / '+state.height;canvas.style.minHeight='0';
     overlays.forEach(el=>{el.style.left=el=== $('graphic')?'34%':el===$('logoGraphic')?'55%':'32%';el.style.top=el=== $('graphic')?'35%':el===$('logoGraphic')?'57%':'72%';});
@@ -435,7 +459,7 @@
     for(const id of ['prompt','body','number','base','accent','trim','sponsor','px','inch','pattern','patternOpacity','patternAngle','patternScale','patternX','patternY','logoSize'])fields[id]=$(id).value;
     const positions={};
     for(const el of overlays)positions[el.id]={left:el.style.left,top:el.style.top,width:el.style.width,zIndex:el.style.zIndex};
-    return {version:2,fields,positions,template:{data:state.source,name:state.sourceName,type:state.sourceType,width:state.width,height:state.height},logo:{data:state.logo,name:state.logoName,type:state.logoType},extraLogos:extraLogos.map(item=>({data:item.data,name:item.name,type:item.type,left:item.el.style.left,top:item.el.style.top,width:item.el.style.width,zIndex:item.el.style.zIndex})),panelMasks:panelMasks.map(p=>p.map(([x,y])=>[x,y])),rulerPoints:rulerPoints.map(([x,y])=>[x,y])};
+    return {version:2,fields,positions,template:{data:state.source,name:state.sourceName,type:state.sourceType,width:state.width,height:state.height},logo:{data:state.logo,name:state.logoName,type:state.logoType},extraLogos:extraLogos.map(item=>({data:item.data,name:item.name,type:item.type,left:item.el.style.left,top:item.el.style.top,width:item.el.style.width,zIndex:item.el.style.zIndex})),panelMasks:panelMasks.map(p=>p.map(([x,y])=>[x,y])),panelNames:panelNames.slice(),rulerPoints:rulerPoints.map(([x,y])=>[x,y])};
   }
   function saveProject() {
     if(!state.source){status('Import a template before saving a project.');return;}
@@ -468,7 +492,7 @@
       if(Number.isInteger(primaryLayer)&&primaryLayer>=20&&primaryLayer<=27)$('logoGraphic').style.zIndex=String(primaryLayer);
       normalizeLogoLayers();
       if(Array.isArray(obj.panelMasks))for(const p of obj.panelMasks.slice(0,12)) {
-        if(Array.isArray(p)&&p.length>=3&&p.length<=60&&p.every(point=>Array.isArray(point)&&point.length===2&&point.every(v=>typeof v==='number'&&Number.isFinite(v)&&v>=0&&v<=1)))panelMasks.push(p);
+        if(Array.isArray(p)&&p.length>=3&&p.length<=60&&p.every(point=>Array.isArray(point)&&point.length===2&&point.every(v=>typeof v==='number'&&Number.isFinite(v)&&v>=0&&v<=1))){panelMasks.push(p);const name=Array.isArray(obj.panelNames)?obj.panelNames[panelNames.length]:'';panelNames.push(typeof name==='string'&&name.trim()?name.trim().slice(0,50):'Panel '+panelMasks.length);}
       }
       if(Array.isArray(obj.rulerPoints)&&obj.rulerPoints.length===2&&obj.rulerPoints.every(p=>Array.isArray(p)&&p.length===2&&p.every(n=>typeof n==='number'&&Number.isFinite(n)&&n>=0&&n<=1)))rulerPoints=obj.rulerPoints.map(p=>p.slice());
       refresh();selectLogo(0);status('Editable project restored with '+logoItems().length+' sponsor logo(s).');
@@ -539,11 +563,14 @@
   });
   $('finishPanel').addEventListener('click',()=>{
     if(draftPanel.length<3)return;
-    panelMasks.push(draftPanel);draftPanel=[];tracingPanel=false;drawPattern();drawPanelOverlay();
+    panelMasks.push(draftPanel);
+    panelNames.push($('panelName').value.trim().slice(0,50)||'Panel '+panelMasks.length);
+    $('panelName').value='';
+    draftPanel=[];tracingPanel=false;drawPattern();drawPanelOverlay();
     scheduleAutosave();status('Artwork mask added. This is not a production cut path.');
   });
   $('undoPoint').addEventListener('click',()=>{draftPanel.pop();drawPanelOverlay();});
-  $('clearPanels').addEventListener('click',()=>{panelMasks.length=0;draftPanel=[];drawPattern();drawPanelOverlay();scheduleAutosave();});
+  $('clearPanels').addEventListener('click',()=>{panelMasks.length=0;panelNames.length=0;draftPanel=[];drawPattern();drawPanelOverlay();scheduleAutosave();});
   $('enableAI').addEventListener('click',enableLocalAI);
   $('generate').addEventListener('click',generate);
   $('surprise').addEventListener('click',()=>{$('prompt').value='Blue and silver dirt late model number 21 with bold lightning graphics';generate();});
