@@ -45,13 +45,13 @@
       req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error||Error('Storage unavailable'));
     });
   }
-  async function draftAction(mode,value) {
+  async function draftAction(mode,value,key='latest') {
     const db=await openDraftDB();
     try {
       return await new Promise((resolve,reject)=>{
         const tx=db.transaction('drafts',mode==='read'?'readonly':'readwrite');
         const store=tx.objectStore('drafts');
-        const req=mode==='read'?store.get('latest'):mode==='delete'?store.delete('latest'):store.put(value,'latest');
+        const req=mode==='read'?store.get(key):mode==='delete'?store.delete(key):store.put(value,key);
         req.onsuccess=()=>resolve(req.result);
         req.onerror=()=>reject(req.error||Error('Draft operation failed'));
         tx.onerror=()=>reject(tx.error||Error('Storage failed'));
@@ -79,6 +79,8 @@
         $('recoverDraft').disabled=false;$('clearDraft').disabled=false;
         $('autosaveStatus').textContent='Saved browser draft found ('+new Date(draft.savedAt).toLocaleString()+'). Restore it to continue.';
       } else $('autosaveStatus').textContent='Autosave will start after you import a template.';
+      const previous=await draftAction('read',undefined,'previous-car');
+      $('restorePrevious').disabled=!previous?.json;
     } catch(err){$('autosaveStatus').textContent='Browser autosave unavailable. Use Download editable project.';}
   }
   const percent = (value,total) => total ? 100*value/total : 0;
@@ -262,12 +264,22 @@
   }
   // Original concept art is a convenient starting point, not measured panel geometry.
   // Explicit click only: never overwrite a customer's saved browser draft on page load.
-  window.RaceWrapLoadConcept = async dataUrl => {
-    if(typeof dataUrl!=='string'||!dataUrl.startsWith('data:image/webp;base64,'))throw Error('Late Model concept image unavailable');
+  window.RaceWrapLoadConcept = async (dataUrl,carName='Late Model') => {
+    if(!['Late Model','Modified','Stock Car'].includes(carName))throw Error('Unsupported car type');
+    if(typeof dataUrl!=='string'||!dataUrl.startsWith('data:image/webp;base64,'))throw Error(carName+' concept image unavailable');
     const response=await fetch(dataUrl);
     const blob=await response.blob();
-    if(blob.type!=='image/webp'||blob.size<1000)throw Error('Late Model concept image invalid');
-    await importTemplate(new File([blob],'RaceWrap original Late Model concept.webp',{type:'image/webp'}));
+    if(blob.type!=='image/webp'||blob.size<1000)throw Error(carName+' concept image invalid');
+    // A previous design must be recoverable before replacing its template.
+    if(state.source) {
+      const json=JSON.stringify(project());
+      if(json.length>30*1024*1024)throw Error('Current project is too large to back up. Download editable JSON before changing cars.');
+      try {
+        await draftAction('write',{json,savedAt:Date.now()},'previous-car');
+        $('restorePrevious').disabled=false;
+      }catch(err){throw Error('Cannot back up current design ('+err.message+'). Download editable JSON before switching cars.');}
+    }
+    await importTemplate(new File([blob],'RaceWrap original '+carName+' concept.webp',{type:'image/webp'}));
     $('sourceMeta').textContent+=' · Original visual concept only; NOT measured panels';
     canvas.scrollIntoView({behavior:'smooth',block:'center'});
   };
@@ -762,7 +774,8 @@
       }
       designSlots=validatedDesignSlots(obj.designSlots);
       updateDesignSlots();updateLayoutButtons();refresh();selectLogo(0);status('Editable project restored with '+logoItems().length+' sponsor logo(s).');
-    } catch(err){status('Project load failed: '+err.message);}
+      return true;
+    } catch(err){status('Project load failed: '+err.message);return false;}
   }
   $('rulerOverlay').addEventListener('pointerdown',e=>{
     if(!measuringSpan||!state.source)return;
@@ -865,6 +878,18 @@
   $('savePNG').addEventListener('click',exportPNG);
   $('saveProject').addEventListener('click',saveProject);
   $('shareProject').addEventListener('click',shareProject);
+  $('restorePrevious').addEventListener('click',async()=>{
+    const button=$('restorePrevious');button.disabled=true;
+    try{
+      const backup=await draftAction('read',undefined,'previous-car');
+      if(!backup?.json)throw Error('No previous car design backup found');
+      const restored=await loadProject(new File([backup.json],'racewrap-previous-car.json',{type:'application/json'}));
+      if(!restored)throw Error('Previous project could not be restored');
+      await draftAction('delete',undefined,'previous-car');
+      $('autosaveStatus').textContent='Previous car design restored. Save editable JSON to keep a portable copy.';
+      status('Previous car design restored, including logos, masks and design controls.');
+    }catch(err){status('Restore previous car failed: '+err.message);button.disabled=false;}
+  });
   $('openProject').addEventListener('change',e=>loadProject(e.target.files[0]));
   $('downloadLogo').addEventListener('click',()=>{const item=logoItems()[selectedLogo];if(item){const a=document.createElement('a');a.href=item.data;a.download='sponsor-'+(selectedLogo+1)+'-normalized.png';a.click();}});
   $('removeLogo').addEventListener('click',()=>{
