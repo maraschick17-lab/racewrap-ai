@@ -26,7 +26,7 @@ document.addEventListener('DOMContentLoaded',()=>{
  button.addEventListener('click',async()=>{
    button.disabled=true;button.textContent='Loading '+choices[selected].name+'…';
    try{
-     await window.RaceWrapLoadConcept(choices[selected].image);
+     await window.RaceWrapLoadConcept(choices[selected].image,choices[selected].name);
      button.textContent=choices[selected].name+' loaded';
      status.textContent='Concept loaded into editor. Artwork is not calibrated for printing.';
    }catch(error){button.textContent='Try again';button.disabled=false;status.textContent=error.message;}
