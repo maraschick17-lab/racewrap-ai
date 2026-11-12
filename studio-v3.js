@@ -529,8 +529,8 @@
     const font=fontSize*state.width/1000;
     return '<text x="'+x.toFixed(2)+'" y="'+(y+font).toFixed(2)+'" font-family="Arial,sans-serif" font-weight="900" font-size="'+font.toFixed(2)+'" fill="'+safe(getComputedStyle(el).color)+'">'+safe(el.textContent)+'</text>';
   }
-  function exportSVG() {
-    if(!state.source){status('Import a licensed template first.');return;}
+  function conceptSVG() {
+    if(!state.source)return '';
     const width=state.width,height=state.height;
     const pattern=$('patternLayer').innerHTML.replace(/<svg[^>]*>/,'').replace(/<\/svg>\s*$/,'');
     const patternSvg=$('pattern').value==='none'?'':'<g opacity="'+(Number($('patternOpacity').value)/100)+'" transform="scale('+(width/1000)+' '+(height/550)+')">'+pattern+'</g>';
@@ -546,8 +546,45 @@
       markup+='<image href="'+item.data+'" x="'+x+'" y="'+y+'" width="'+w+'" height="'+h+'"/>';
     }
     markup+='</svg>';
+    return markup;
+  }
+  function exportSVG() {
+    const markup=conceptSVG();
+    if(!markup){status('Import a licensed template first.');return;}
     download(markup,'racewrap-concept.svg','image/svg+xml');
     status('Concept SVG downloaded. Not scaled for print or panel cut paths.');
+  }
+  // Raster preview for sharing on phones; this is NOT a print-size export.
+  async function exportPNG() {
+    if(!state.source){status('Import a licensed template first.');return;}
+    const button=$('savePNG');
+    button.disabled=true;
+    let svgUrl='';
+    try {
+      status('Preparing PNG concept preview…');
+      const markup=conceptSVG();
+      svgUrl=URL.createObjectURL(new Blob([markup],{type:'image/svg+xml;charset=utf-8'}));
+      const preview=await loadImageURL(svgUrl);
+      const ratio=Math.min(1,2400/Math.max(state.width,state.height));
+      const output=document.createElement('canvas');
+      output.width=Math.max(1,Math.round(state.width*ratio));
+      output.height=Math.max(1,Math.round(state.height*ratio));
+      const ctx=output.getContext('2d');
+      if(!ctx)throw Error('Canvas unavailable');
+      ctx.drawImage(preview,0,0,output.width,output.height);
+      const png=await new Promise((resolve,reject)=>output.toBlob(blob=>blob?resolve(blob):reject(Error('PNG encoding failed')),'image/png'));
+      const url=URL.createObjectURL(png);
+      const a=document.createElement('a');
+      a.href=url;a.download='racewrap-concept-preview.png';
+      document.body.appendChild(a);a.click();a.remove();
+      setTimeout(()=>URL.revokeObjectURL(url),5000);
+      status('PNG concept preview downloaded ('+output.width+' × '+output.height+' px). Not print-ready.');
+    } catch(err) {
+      status('PNG preview failed: '+err.message+'. Download concept SVG or editable project instead.');
+    } finally {
+      if(svgUrl)URL.revokeObjectURL(svgUrl);
+      button.disabled=false;
+    }
   }
   function project() {
     const fields={};
@@ -684,6 +721,7 @@
   $('generate').addEventListener('click',generate);
   $('surprise').addEventListener('click',()=>{$('prompt').value='Blue and silver dirt late model number 21 with bold lightning graphics';generate();});
   $('save').addEventListener('click',exportSVG);
+  $('savePNG').addEventListener('click',exportPNG);
   $('saveProject').addEventListener('click',saveProject);
   $('openProject').addEventListener('change',e=>loadProject(e.target.files[0]));
   $('downloadLogo').addEventListener('click',()=>{const item=logoItems()[selectedLogo];if(item){const a=document.createElement('a');a.href=item.data;a.download='sponsor-'+(selectedLogo+1)+'-normalized.png';a.click();}});
