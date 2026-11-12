@@ -1,0 +1,54 @@
+'use strict';
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
+const base=process.env.BASE_URL||'https://racewrap-ai-studio.onrender.com';
+(async()=>{
+ const browser=await chromium.launch({headless:true,executablePath:process.env.CHROME_PATH||undefined,args:['--no-sandbox']});
+ const context=await browser.newContext({viewport:{width:390,height:844},acceptDownloads:true,hasTouch:true,isMobile:true});
+ const page=await context.newPage(),errors=[];
+ page.on('pageerror',e=>errors.push(e.message));
+ try {
+  const response=await page.goto(base+'/?png-preview='+Date.now(),{waitUntil:'domcontentloaded'});
+  assert.equal(response.status(),200);
+  await page.waitForFunction(()=>document.querySelector('script[src*="studio-v3.js?v="]')&&document.querySelector('#saveBoard'));
+  const svg='<svg xmlns="http://www.w3.org/2000/svg" width="800" height="500"><rect width="800" height="500" fill="#ffffff"/></svg>';
+  await page.locator('#template').setInputFiles({name:'licensed-fixture.svg',mimeType:'image/svg+xml',buffer:Buffer.from(svg)});
+  await page.waitForFunction(()=>document.querySelector('#sourceMeta').textContent.includes('licensed-fixture'));
+  await page.locator('#number').fill('17');
+  await page.locator('#sponsor').fill('TEST SPONSOR');
+  const downloadPromise=page.waitForEvent('download');
+  await page.locator('#saveBoard').click();
+  const download=await downloadPromise;
+  assert.equal(download.suggestedFilename(),'racewrap-presentation-board.png');
+  const png=fs.readFileSync(await download.path());
+  assert.equal(png.subarray(0,8).toString('hex'),'89504e470d0a1a0a');
+  assert.equal(png.readUInt32BE(16),2000);
+  assert.equal(png.readUInt32BE(20),1400);
+  // Decode the actual download and confirm it contains rendered graphics, not only the white template.
+  const colored=await page.evaluate(async b64=>{
+    const im=new Image();
+    im.src='data:image/png;base64,'+b64;
+    await im.decode();
+    const canvas=document.createElement('canvas');
+    canvas.width=im.naturalWidth;canvas.height=im.naturalHeight;
+    const ctx=canvas.getContext('2d');
+    ctx.drawImage(im,0,0);
+    const rgba=ctx.getImageData(0,0,canvas.width,canvas.height).data;
+    let nonwhite=0;
+    for(let i=0;i<rgba.length;i+=4)if(rgba[i]<220||rgba[i+1]<220||rgba[i+2]<220)nonwhite++;
+    return nonwhite;
+  },png.toString('base64'));
+  assert.ok(colored>500,'Board should include rendered composition');
+  assert.match(await page.locator('#status').innerText(),/2000 x 1400/);
+  await page.locator('#number').fill('42');
+  const again=page.waitForEvent('download');await page.locator('#saveBoard').click();
+  const revised=fs.readFileSync(await (await again).path());
+  assert.notDeepEqual(revised,png,'Board must reflect current edits');
+  assert.match(await page.locator('#status').innerText(),/Not print-ready/);
+  assert.equal(await page.locator('#saveBoard').isEnabled(),true);
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),true);
+  assert.deepEqual(errors,[]);
+  console.log('PASS presentation board: 2000x1400 PNG, rendered design, mobile layout, zero JS errors');
+ }finally{await browser.close();}
+})().catch(e=>{console.error(e);process.exit(1);});

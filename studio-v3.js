@@ -894,6 +894,46 @@
       button.disabled=false;
     }
   }
+  // A client-facing concept board; source resolution and geometry remain unverified.
+  async function exportBoard() {
+    if(!state.source){status('Import a licensed template first.');return;}
+    const button=$('saveBoard');button.disabled=true;
+    let sourceURL='';
+    try {
+      status('Preparing presentation board...');
+      sourceURL=URL.createObjectURL(new Blob([conceptSVG()],{type:'image/svg+xml;charset=utf-8'}));
+      const preview=await loadImageURL(sourceURL);
+      const canvas=document.createElement('canvas');canvas.width=2000;canvas.height=1400;
+      const ctx=canvas.getContext('2d');
+      if(!ctx)throw Error('Canvas unavailable');
+      ctx.fillStyle='#0b1220';ctx.fillRect(0,0,2000,1400);
+      const text=(value,x,y,size,color='#f3f6fc',max=1800)=>{
+        ctx.font='700 '+size+'px Arial,sans-serif';ctx.fillStyle=color;
+        ctx.fillText(String(value).replace(/[\r\n]/g,' '),x,y,max);
+      };
+      ctx.fillStyle=$('accent').value;ctx.fillRect(80,75,8,140);
+      text('RACEWRAP / CONCEPT PRESENTATION',115,110,24,'#a9b9d0');
+      text('#'+$('number').value+'  '+($('sponsor').value||'Wrap design direction'),115,178,52);
+      text('Current editable design / Client review',115,220,24,'#a9b9d0');
+      ctx.fillStyle='#e9edf3';ctx.fillRect(80,270,1840,830);
+      const scale=Math.min(1740/state.width,730/state.height);
+      const w=state.width*scale,h=state.height*scale;
+      ctx.drawImage(preview,80+(1840-w)/2,270+(830-h)/2,w,h);
+      text('COLOR DIRECTION',80,1160,22,'#a9b9d0');
+      ['base','accent','trim'].forEach((id,i)=>{
+        const x=80+i*320;ctx.fillStyle=$(id).value;ctx.fillRect(x,1190,72,56);
+        text($(id).value.toUpperCase(),x+90,1227,27);
+      });
+      text('VISUAL CONCEPT ONLY - NOT PRINT-READY',80,1320,26,'#f5c879');
+      text('Source resolution '+state.width+' x '+state.height+' px / Panel geometry and physical fitment unverified',80,1360,21,'#a9b9d0');
+      const blob=await new Promise((resolve,reject)=>canvas.toBlob(b=>b?resolve(b):reject(Error('PNG encoding failed')),'image/png'));
+      const url=URL.createObjectURL(blob),a=document.createElement('a');
+      a.href=url;a.download='racewrap-presentation-board.png';document.body.appendChild(a);a.click();a.remove();
+      setTimeout(()=>URL.revokeObjectURL(url),5000);
+      status('Presentation board downloaded (2000 x 1400 px). Visual concept only. Not print-ready.');
+    } catch(err){status('Presentation board failed: '+err.message);}
+    finally {if(sourceURL)URL.revokeObjectURL(sourceURL);button.disabled=false;}
+  }
   function project() {
     const fields={};
     for(const id of ['prompt','body','number','base','accent','trim','sponsor','px','inch','pattern','patternOpacity','patternAngle','patternScale','patternX','patternY','secondaryPattern','secondaryX','secondaryY','secondaryOpacity','logoSize'])fields[id]=$(id).value;
@@ -1073,6 +1113,7 @@
   $('surprise').addEventListener('click',()=>{$('prompt').value='Blue and silver dirt late model number 21 with bold lightning graphics';generate();});
   $('save').addEventListener('click',exportSVG);
   $('savePNG').addEventListener('click',exportPNG);
+  $('saveBoard').addEventListener('click',exportBoard);
   $('exportPanelReport').addEventListener('click',exportPanelReference);
   $('saveProject').addEventListener('click',saveProject);
   $('saveDraftNow').addEventListener('click',async()=>{
