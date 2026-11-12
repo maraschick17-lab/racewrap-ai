@@ -1,0 +1,46 @@
+'use strict';
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
+const base=process.env.BASE_URL||'https://racewrap-ai-studio.onrender.com';
+(async()=>{
+ const browser=await chromium.launch({headless:true,executablePath:process.env.CHROME_PATH||undefined,args:['--no-sandbox']});
+ const context=await browser.newContext({viewport:{width:390,height:844},acceptDownloads:true,hasTouch:true,isMobile:true});
+ const page=await context.newPage(),errors=[];
+ page.on('pageerror',e=>errors.push(e.message));
+ try{
+  const response=await page.goto(base+'/?design-slots='+Date.now(),{waitUntil:'domcontentloaded'});
+  assert.equal(response.status(),200);
+  await page.waitForFunction(()=>document.querySelector('#slotSave0')&&document.querySelector('#slotLoad2'));
+  const svg='<svg xmlns="http://www.w3.org/2000/svg" width="800" height="500"><rect width="800" height="500" fill="white"/></svg>';
+  await page.locator('#template').setInputFiles({name:'licensed-fixture.svg',mimeType:'image/svg+xml',buffer:Buffer.from(svg)});
+  await page.waitForFunction(()=>document.querySelector('#sourceMeta').textContent.includes('licensed-fixture'));
+  const set=async(id,value)=>page.locator('#'+id).evaluate((el,v)=>{el.value=v;el.dispatchEvent(new Event('input',{bubbles:true}));},value);
+  await set('base','#111111');await set('accent','#ff0000');await set('pattern','ribbons');await set('patternX','75');await set('number','17');
+  await page.locator('#slotSave0').click();
+  assert.equal(await page.locator('#slotLoad0').isEnabled(),true);
+  await set('base','#222222');await set('accent','#0000ff');await set('pattern','burst');await set('patternX','20');await set('number','21');
+  await page.locator('#slotSave1').click();
+  await page.locator('#slotLoad0').click();
+  assert.equal(await page.locator('#base').inputValue(),'#111111');
+  assert.equal(await page.locator('#accent').inputValue(),'#ff0000');
+  assert.equal(await page.locator('#pattern').inputValue(),'ribbons');
+  assert.equal(await page.locator('#patternX').inputValue(),'75');
+  assert.equal(await page.locator('#number').inputValue(),'17');
+  const projectDownload=page.waitForEvent('download');
+  await page.locator('#saveProject').click();
+  const project=JSON.parse(fs.readFileSync(await (await projectDownload).path(),'utf8'));
+  assert.equal(project.designSlots[0].accent,'#ff0000');
+  assert.equal(project.designSlots[1].accent,'#0000ff');
+  assert.equal(project.designSlots[2],null);
+  await page.locator('#openProject').setInputFiles({name:'project.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(project))});
+  await page.waitForFunction(()=>document.querySelector('#status').textContent.includes('restored'));
+  await page.locator('#slotLoad1').click();
+  assert.equal(await page.locator('#accent').inputValue(),'#0000ff');
+  assert.equal(await page.locator('#number').inputValue(),'21');
+  assert.equal(await page.locator('#pattern').inputValue(),'burst');
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),true,'mobile horizontal overflow');
+  assert.deepEqual(errors,[],'page JS errors');
+  console.log('PASS design slots A/B capture, restore, JSON roundtrip, 390px mobile, zero JS errors');
+ }finally{await browser.close();}
+})().catch(e=>{console.error(e);process.exit(1);});
