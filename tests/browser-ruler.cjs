@@ -17,6 +17,7 @@ const base=process.env.BASE_URL||'https://racewrap-ai-studio.onrender.com';
   await page.waitForFunction(()=>document.querySelector('#sourceMeta').textContent.includes('licensed-ruler'));
   await page.locator('#inch').fill('20');
   await page.locator('#measureSpan').click();
+  await page.locator('#rulerOverlay').scrollIntoViewIfNeeded();
   const box=await page.locator('#rulerOverlay').boundingBox();
   await page.touchscreen.tap(box.x+box.width*.2,box.y+box.height*.5);
   await page.touchscreen.tap(box.x+box.width*.7,box.y+box.height*.5);
