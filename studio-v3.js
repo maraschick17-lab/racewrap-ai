@@ -139,11 +139,11 @@
     $('sponsorGraphic').style.display=ready&&!!$('sponsor').value.trim()?'block':'none';
     $('logoGraphic').style.display=ready&&!!state.logo?'block':'none';
     for (const item of extraLogos) item.el.style.display=ready?'block':'none';
-    $('patternLayer').style.display=ready&&$('pattern').value!=='none'?'block':'none';
+    $('patternLayer').style.display=ready&&($('pattern').value!=='none'||$('secondaryPattern').value!=='none')?'block':'none';
     drawPattern();drawPanelOverlay();drawRuler();scheduleAutosave();
   }
-  function drawPattern() {
-    const layer=$('patternLayer'), style=$('pattern').value, accent=$('accent').value, trim=$('trim').value;
+  // Procedural graphics; optional on-device AI selects controls, not image pixels.
+  function patternShapes(style,accent,trim) {
     let shapes='';
     if(style==='slashes') shapes='<polygon points="90,420 320,90 390,90 160,420" fill="'+accent+'"/><polygon points="180,420 410,90 450,90 220,420" fill="'+trim+'"/>';
     if(style==='chevrons') shapes='<path d="M30 390 L300 95 L390 95 L125 390 Z M180 390 L450 95 L495 95 L230 390 Z" fill="'+accent+'"/>';
@@ -151,9 +151,18 @@
     if(style==='checker') {for(let r=0;r<3;r++)for(let c=0;c<8;c++)if((r+c)%2===0)shapes+='<rect x="'+(60+c*46)+'" y="'+(300+r*46)+'" width="46" height="46" fill="'+accent+'"/>';}
     if(style==='ribbons') {for(let i=0;i<6;i++)shapes+='<path d="M'+(25+i*32)+' 450 Q'+(150+i*32)+' 260 '+(280+i*32)+' 70" fill="none" stroke="'+(i%2?trim:accent)+'" stroke-width="'+(i%2?12:22)+'" stroke-linecap="round"/>';}
     if(style==='burst') {for(let i=0;i<9;i++){const a=(-72+i*18)*Math.PI/180,b=a+0.13;shapes+='<path d="M120 380 L'+(120+420*Math.cos(a)).toFixed(1)+' '+(380+420*Math.sin(a)).toFixed(1)+' L'+(120+420*Math.cos(b)).toFixed(1)+' '+(380+420*Math.sin(b)).toFixed(1)+' Z" fill="'+(i%2?trim:accent)+'"/>';}}
+    return shapes;
+  }
+  function drawPattern() {
+    const layer=$('patternLayer'),accent=$('accent').value,trim=$('trim').value;
     const angle=clamp(Number($('patternAngle').value)||0,-75,75),scale=clamp(Number($('patternScale').value)||100,50,180)/100;
     const dx=(clamp(Number($('patternX').value)||0,0,100)-35)*10,dy=(clamp(Number($('patternY').value)||0,0,100)-50)*5.5;
-    shapes='<g transform="translate('+dx.toFixed(2)+' '+dy.toFixed(2)+') translate(270 280) rotate('+angle+') scale('+scale+') translate(-270 -280)">'+shapes+'</g>';
+    let shapes='<g data-layer="primary" transform="translate('+dx.toFixed(2)+' '+dy.toFixed(2)+') translate(270 280) rotate('+angle+') scale('+scale+') translate(-270 -280)">'+patternShapes($('pattern').value,accent,trim)+'</g>';
+    if($('secondaryPattern').value!=='none') {
+      const sx=(Number($('secondaryX').value)-50)*10,sy=(Number($('secondaryY').value)-50)*5.5;
+      const opacity=clamp(Number($('secondaryOpacity').value)||0,0,100)/100;
+      shapes+='<g data-layer="secondary" opacity="'+opacity.toFixed(2)+'" transform="translate('+sx.toFixed(2)+' '+sy.toFixed(2)+') translate(270 280) scale(.75) translate(-270 -280)">'+patternShapes($('secondaryPattern').value,trim,accent)+'</g>';
+    }
     const masks=panelMasks.map(p=>'<polygon points="'+p.map(([x,y])=>(x*1000).toFixed(2)+','+(y*550).toFixed(2)).join(' ')+'"/>').join('');
     const clipped=panelMasks.length?'<defs><clipPath id="racewrapPanelClip">'+masks+'</clipPath></defs><g clip-path="url(#racewrapPanelClip)">'+shapes+'</g>':shapes;
     layer.innerHTML='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 550" preserveAspectRatio="none" width="100%" height="100%">'+clipped+'</svg>';
@@ -344,14 +353,15 @@
     for(const field of ['base','accent','trim'])if(/^#[0-9a-f]{6}$/i.test(design[field]||''))$(field).value=design[field];
     if(design.number)$('number').value=String(design.number).replace(/[^a-zA-Z0-9]/g,'').slice(0,4);
     if(['none','slashes','chevrons','lightning','checker','ribbons','burst'].includes(design.pattern))$('pattern').value=design.pattern;
-    for(const [key,min,max] of [['patternAngle',-75,75],['patternScale',50,180],['patternOpacity',5,95],['patternX',0,100],['patternY',0,100]]) {
+    if(['none','slashes','chevrons','lightning','checker','ribbons','burst'].includes(design.secondaryPattern))$('secondaryPattern').value=design.secondaryPattern;
+    for(const [key,min,max] of [['patternAngle',-75,75],['patternScale',50,180],['patternOpacity',5,95],['patternX',0,100],['patternY',0,100],['secondaryX',0,100],['secondaryY',0,100],['secondaryOpacity',0,100]]) {
       if(design[key]!==undefined && design[key]!==null && design[key]!=='' && Number.isFinite(Number(design[key])))$(key).value=clamp(Number(design[key]),min,max);
     }
     refresh();
   }
   // Saved directions are actual captured style controls, not new AI inference.
   // Sponsor artwork, placement, template and panel geometry remain unchanged.
-  const designSlotKeys=['number','base','accent','trim','pattern','patternAngle','patternScale','patternOpacity','patternX','patternY'];
+  const designSlotKeys=['number','base','accent','trim','pattern','patternAngle','patternScale','patternOpacity','patternX','patternY','secondaryPattern','secondaryX','secondaryY','secondaryOpacity'];
   function updateDesignSlots() {
     const names=['A','B','C'];
     for(let i=0;i<3;i++){
@@ -384,16 +394,17 @@
       if(!item||typeof item!=='object'||Array.isArray(item))return null;
       if(!designSlotKeys.every(key=>typeof item[key]==='string'&&item[key].length<40))return null;
       if(!['none','slashes','chevrons','lightning','checker','ribbons','burst'].includes(item.pattern))return null;
+      if(!['none','slashes','chevrons','lightning','checker','ribbons','burst'].includes(item.secondaryPattern))return null;
       if(!['base','accent','trim'].every(key=>/^#[0-9a-f]{6}$/i.test(item[key])))return null;
       if(!/^[a-zA-Z0-9]{1,4}$/.test(item.number))return null;
-      for(const [key,min,max] of [['patternAngle',-75,75],['patternScale',50,180],['patternOpacity',5,95],['patternX',0,100],['patternY',0,100]]) {
+      for(const [key,min,max] of [['patternAngle',-75,75],['patternScale',50,180],['patternOpacity',5,95],['patternX',0,100],['patternY',0,100],['secondaryX',0,100],['secondaryY',0,100],['secondaryOpacity',0,100]]) {
         if(!Number.isFinite(Number(item[key]))||Number(item[key])<min||Number(item[key])>max)return null;
       }
       return Object.fromEntries(designSlotKeys.map(key=>[key,item[key]]));
     });
   }
   // These are deterministic layout comparisons of the current controls, not AI-generated artwork.
-  const layoutKeys=['pattern','patternAngle','patternScale','patternOpacity','patternX','patternY'];
+  const layoutKeys=['pattern','patternAngle','patternScale','patternOpacity','patternX','patternY','secondaryPattern','secondaryX','secondaryY','secondaryOpacity'];
   function currentLayout() {
     return Object.fromEntries(layoutKeys.map(key=>[key,$(key).value]));
   }
@@ -472,7 +483,7 @@
     if(!match)return false;
     const result=JSON.parse(match[0]);
     if(!result||typeof result!=='object'||Array.isArray(result))return false;
-    if(!['base','accent','trim','number','pattern','patternAngle','patternScale','patternOpacity','patternX','patternY'].some(key=>result[key]!==undefined))return false;
+    if(!['base','accent','trim','number','pattern','patternAngle','patternScale','patternOpacity','patternX','patternY','secondaryPattern','secondaryX','secondaryY','secondaryOpacity'].some(key=>result[key]!==undefined))return false;
     applyDesign(result);return true;
   }
   async function generate() {
@@ -481,7 +492,7 @@
     $('generate').disabled=true;
     try {
       let usedAI=false, mode='';
-      const instruction='You are a racecar wrap design assistant. Return ONLY a JSON object with keys base, accent, trim (hex RGB colors), number (1-4 characters), pattern (one of none, slashes, chevrons, lightning, checker, ribbons, burst), patternAngle (degrees -75 to 75), patternScale (percent 50 to 180), patternOpacity (percent 5 to 95), patternX (horizontal position 0 to 100), patternY (vertical position 0 to 100). Make a cohesive racecar composition with balanced visual weight and legible sponsor logos. No other text. User request: '+prompt;
+      const instruction='You are a racecar wrap design assistant. Return ONLY a JSON object with keys base, accent, trim (hex RGB colors), number (1-4 characters), pattern (one of none, slashes, chevrons, lightning, checker, ribbons, burst), patternAngle (degrees -75 to 75), patternScale (percent 50 to 180), patternOpacity (percent 5 to 95), patternX (horizontal position 0 to 100), patternY (vertical position 0 to 100), secondaryPattern (one of none, slashes, chevrons, lightning, checker, ribbons, burst), secondaryX (0 to 100), secondaryY (0 to 100), secondaryOpacity (0 to 100). Use a restrained complementary secondary layer when the user requests depth or layering. Make a cohesive racecar composition with balanced visual weight and legible sponsor logos. No other text. User request: '+prompt;
       if(webLLMEngine) {
         status('Generating with locally loaded WebGPU AI…');
         const response=await webLLMEngine.chat.completions.create({
@@ -533,7 +544,7 @@
     if(!state.source)return '';
     const width=state.width,height=state.height;
     const pattern=$('patternLayer').innerHTML.replace(/<svg[^>]*>/,'').replace(/<\/svg>\s*$/,'');
-    const patternSvg=$('pattern').value==='none'?'':'<g opacity="'+(Number($('patternOpacity').value)/100)+'" transform="scale('+(width/1000)+' '+(height/550)+')">'+pattern+'</g>';
+    const patternSvg=$('pattern').value==='none'&&$('secondaryPattern').value==='none'?'':'<g opacity="'+(Number($('patternOpacity').value)/100)+'" transform="scale('+(width/1000)+' '+(height/550)+')">'+pattern+'</g>';
     let markup='<svg xmlns="http://www.w3.org/2000/svg" width="'+width+'" height="'+height+'" viewBox="0 0 '+width+' '+height+'">';
     markup+='<image href="'+state.source+'" width="'+width+'" height="'+height+'"/>'+patternSvg;
     markup+=overlayMarkup($('graphic'),75)+overlayMarkup($('sponsorGraphic'),26);
@@ -588,7 +599,7 @@
   }
   function project() {
     const fields={};
-    for(const id of ['prompt','body','number','base','accent','trim','sponsor','px','inch','pattern','patternOpacity','patternAngle','patternScale','patternX','patternY','logoSize'])fields[id]=$(id).value;
+    for(const id of ['prompt','body','number','base','accent','trim','sponsor','px','inch','pattern','patternOpacity','patternAngle','patternScale','patternX','patternY','secondaryPattern','secondaryX','secondaryY','secondaryOpacity','logoSize'])fields[id]=$(id).value;
     const positions={};
     for(const el of overlays)positions[el.id]={left:el.style.left,top:el.style.top,width:el.style.width,zIndex:el.style.zIndex};
     return {version:2,fields,positions,layoutComparison:layoutAnchor?{anchor:layoutAnchor,choice:layoutChoice}:null,designSlots:designSlots.map(slot=>slot?{...slot}:null),template:{data:state.source,name:state.sourceName,type:state.sourceType,width:state.width,height:state.height},logo:{data:state.logo,name:state.logoName,type:state.logoType},extraLogos:extraLogos.map(item=>({data:item.data,name:item.name,type:item.type,left:item.el.style.left,top:item.el.style.top,width:item.el.style.width,zIndex:item.el.style.zIndex})),panelMasks:panelMasks.map(p=>p.map(([x,y])=>[x,y])),panelNames:panelNames.slice(),rulerPoints:rulerPoints.map(([x,y])=>[x,y])};
@@ -661,7 +672,7 @@
     $('calibration').textContent=units>0&&inches>0?'Reference: '+(units/inches).toFixed(3)+' image px/in · canvas approx '+(state.width/(units/inches)||0).toFixed(1)+' × '+(state.height/(units/inches)||0).toFixed(1)+' in including margins; NOT print-fitment':'Enter positive reference measurements in pixels and inches';
     drawRuler();
   }
-  for(const id of ['number','base','accent','trim','sponsor','pattern','patternOpacity','patternAngle','patternScale','patternX','patternY'])$(id).addEventListener('input',refresh);
+  for(const id of ['number','base','accent','trim','sponsor','pattern','patternOpacity','patternAngle','patternScale','patternX','patternY','secondaryPattern','secondaryX','secondaryY','secondaryOpacity'])$(id).addEventListener('input',refresh);
   for(const id of ['prompt','body','px','inch','logoSize'])$(id).addEventListener('input',scheduleAutosave);
   for(const id of ['px','inch'])$(id).addEventListener('input',calibrate);
   $('logoSize').addEventListener('input',()=>{const item=logoItems()[selectedLogo];if(item)item.el.style.width=$('logoSize').value+'%';});
