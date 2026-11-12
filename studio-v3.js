@@ -269,7 +269,7 @@
     if(typeof dataUrl!=='string'||!dataUrl.startsWith('data:image/webp;base64,'))throw Error(carName+' concept image unavailable');
     const response=await fetch(dataUrl);
     const blob=await response.blob();
-    if(blob.type!=='image/webp'||blob.size<1000)throw Error(carName+' concept image invalid');
+    if(blob.type!=='image/webp'||blob.size<300)throw Error(carName+' concept image invalid');
     // A previous design must be recoverable before replacing its template.
     if(state.source) {
       const json=JSON.stringify(project());
