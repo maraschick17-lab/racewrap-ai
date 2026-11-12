@@ -494,12 +494,12 @@
     $('generate').disabled=true;
     try {
       let usedAI=false, mode='';
-      const instruction='You are a racecar wrap design assistant. Return ONLY a JSON object with keys base, accent, trim (hex RGB colors), number (1-4 characters), pattern (one of none, slashes, chevrons, lightning, checker, ribbons, burst), patternAngle (degrees -75 to 75), patternScale (percent 50 to 180), patternOpacity (percent 5 to 95), patternX (horizontal position 0 to 100), patternY (vertical position 0 to 100), secondaryPattern (one of none, slashes, chevrons, lightning, checker, ribbons, burst), secondaryX (0 to 100), secondaryY (0 to 100), secondaryOpacity (0 to 100). Use a restrained complementary secondary layer when the user requests depth or layering. Make a cohesive racecar composition with balanced visual weight and legible sponsor logos. No other text. User request: '+prompt;
+      const instruction='Return one compact valid JSON object, no markdown or explanation. Colors base,accent,trim must be #RRGGBB; number is 1-4 characters. pattern and secondaryPattern must be one of none,slashes,chevrons,lightning,checker,ribbons,burst. patternAngle=-75..75; patternScale=50..180; patternOpacity=5..95; patternX,patternY,secondaryX,secondaryY=0..100; secondaryOpacity=0..100. Use secondaryPattern none unless layered accents are requested. User design: '+prompt;
       if(webLLMEngine) {
         status('Generating with locally loaded WebGPU AI…');
         const response=await webLLMEngine.chat.completions.create({
-          messages:[{role:'system',content:'Return only a compact JSON object describing racecar wrap styling.'},{role:'user',content:instruction}],
-          temperature:0.2,max_tokens:220
+          messages:[{role:'system',content:'You are a racecar wrap styling planner. Reply with a single valid JSON object and no other text.'},{role:'user',content:instruction}],
+          temperature:0.1,max_tokens:360
         });
         usedAI=parseModelDesign(response.choices?.[0]?.message?.content||'');
         if(usedAI)mode='Local WebGPU AI design';
