@@ -502,7 +502,7 @@
           temperature:0.1,max_tokens:24
         });
         const modelText=response.choices?.[0]?.message?.content||'';
-        const matched=modelText.toLowerCase().match(/\\b(lightning|checker|ribbons|slashes|burst|chevrons|none)\\b/);
+        const matched=modelText.toLowerCase().match(/\b(lightning|checker|ribbons|slashes|burst|chevrons|none)\b/);
         if(matched) {
           applyDesign({...parsePrompt(prompt),pattern:matched[1]});
           usedAI=true;mode='Local WebGPU AI pattern suggestion + rule-based palette';
