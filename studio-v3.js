@@ -133,7 +133,13 @@
   }
   async function loadImageURL(url) {
     const im = new Image();
-    await new Promise((resolve,reject)=>{im.onload=resolve;im.onerror=()=>reject(Error('Image cannot be decoded'));im.src=url;});
+    await new Promise((resolve,reject)=>{
+      let timed = false;
+      const t = setTimeout(()=>{ timed = true; im.onload = null; im.onerror = null; reject(Error('Image load timed out')); }, 12000);
+      im.onload = ()=>{ if(!timed){ clearTimeout(t); resolve(); } };
+      im.onerror = ()=>{ clearTimeout(t); reject(Error('Image cannot be decoded')); };
+      im.src = url;
+    });
     if (!im.naturalWidth || !im.naturalHeight || im.naturalWidth*im.naturalHeight>50000000) throw Error('Image dimensions are invalid or too large');
     return im;
   }
