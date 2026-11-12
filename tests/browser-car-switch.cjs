@@ -29,8 +29,10 @@ const base=process.env.BASE_URL||'https://racewrap-ai-studio.onrender.com/index.
    await page.locator('#finishPanel').click();
    assert.match(await page.locator('#panelStatus').innerText(),/1 artwork mask/);
    await page.locator('[data-car="stock"]').click();
+   const stockWidth=await page.locator('#starterImage').evaluate(e=>e.naturalWidth);
+   assert.ok(stockWidth>0,'Stock Car concept image must decode');
    await page.locator('#useStarter').click();
-   await page.waitForFunction(()=>document.querySelector('#sourceMeta').textContent.includes('Stock Car concept.webp'));
+   await page.waitForFunction(()=>document.querySelector('#sourceMeta').textContent.includes('Stock Car concept.webp'),null,{timeout:12000}).catch(async e=>{throw Error('Stock import failed: '+await page.locator('#status').innerText()+' / '+await page.locator('#starterStatus').innerText()+' / '+e.message);});
    assert.match(await page.locator('#panelStatus').innerText(),/No artwork masks/);
    assert.equal(await page.locator('#restorePrevious').isDisabled(),false);
    await page.locator('#restorePrevious').click();
