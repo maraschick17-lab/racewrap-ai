@@ -156,8 +156,13 @@
     } finally {if(url) URL.revokeObjectURL(url);}
   }
   async function pdfPage(file,page=1) {
-    const pdfjs=await import('https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.min.mjs');
-    pdfjs.GlobalWorkerOptions.workerSrc='https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.worker.min.mjs';
+    let pdfjs;
+    try {
+      pdfjs = await import('https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.min.mjs');
+      pdfjs.GlobalWorkerOptions.workerSrc='https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.worker.min.mjs';
+    } catch(err) {
+      throw Error('PDF rendering library unavailable: '+err.message);
+    }
     const bytes=new Uint8Array(await file.arrayBuffer());
     const doc=await pdfjs.getDocument({data:bytes}).promise;
     const p=await doc.getPage(page);
