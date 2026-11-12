@@ -392,15 +392,17 @@
     return [0,1,2].map(i=>{
       const item=raw[i];
       if(!item||typeof item!=='object'||Array.isArray(item))return null;
-      if(!designSlotKeys.every(key=>typeof item[key]==='string'&&item[key].length<40))return null;
+      const defaults={secondaryPattern:'none',secondaryX:'50',secondaryY:'50',secondaryOpacity:'65'};
+      const normalized={...defaults,...item};
+      if(!designSlotKeys.every(key=>typeof normalized[key]==='string'&&normalized[key].length<40))return null;
       if(!['none','slashes','chevrons','lightning','checker','ribbons','burst'].includes(item.pattern))return null;
-      if(!['none','slashes','chevrons','lightning','checker','ribbons','burst'].includes(item.secondaryPattern))return null;
+      if(!['none','slashes','chevrons','lightning','checker','ribbons','burst'].includes(normalized.secondaryPattern))return null;
       if(!['base','accent','trim'].every(key=>/^#[0-9a-f]{6}$/i.test(item[key])))return null;
       if(!/^[a-zA-Z0-9]{1,4}$/.test(item.number))return null;
       for(const [key,min,max] of [['patternAngle',-75,75],['patternScale',50,180],['patternOpacity',5,95],['patternX',0,100],['patternY',0,100],['secondaryX',0,100],['secondaryY',0,100],['secondaryOpacity',0,100]]) {
-        if(!Number.isFinite(Number(item[key]))||Number(item[key])<min||Number(item[key])>max)return null;
+        if(!Number.isFinite(Number(normalized[key]))||Number(normalized[key])<min||Number(normalized[key])>max)return null;
       }
-      return Object.fromEntries(designSlotKeys.map(key=>[key,item[key]]));
+      return Object.fromEntries(designSlotKeys.map(key=>[key,normalized[key]]));
     });
   }
   // These are deterministic layout comparisons of the current controls, not AI-generated artwork.
@@ -616,7 +618,7 @@
       if(obj.version!==2||!obj.template||!/^data:image\/png;base64,/.test(obj.template.data))throw Error('Unsupported project');
       if(obj.template.data.length>18*1024*1024)throw Error('Template too large');
       clearExtraLogos();state.logo='';state.logoName='';state.logoType='';$('logoGraphic').src='';$('logoGraphic').style.zIndex='20';
-      for(const [key,value] of Object.entries(obj.fields||{}))if($(key)&&typeof value==='string'&&value.length<3000)$(key).value=value;
+      for(const [key,value] of Object.entries({secondaryPattern:'none',secondaryX:'50',secondaryY:'50',secondaryOpacity:'65',...(obj.fields||{})}))if($(key)&&typeof value==='string'&&value.length<3000)$(key).value=value;
       setTemplate({data:obj.template.data,width:Number(obj.template.width),height:Number(obj.template.height)},String(obj.template.name||'Restored template').slice(0,100),obj.template.type||'png');
       if(obj.logo&&/^data:image\/png;base64,/.test(obj.logo.data||'')) {
         state.logo=obj.logo.data;state.logoName=obj.logo.name||'';state.logoType=obj.logo.type||'png';
@@ -640,9 +642,10 @@
       if(Array.isArray(obj.rulerPoints)&&obj.rulerPoints.length===2&&obj.rulerPoints.every(p=>Array.isArray(p)&&p.length===2&&p.every(n=>typeof n==='number'&&Number.isFinite(n)&&n>=0&&n<=1)))rulerPoints=obj.rulerPoints.map(p=>p.slice());
       layoutAnchor=null;layoutChoice=0;
       const comparison=obj.layoutComparison;
-      if(comparison&&comparison.anchor&&typeof comparison.anchor==='object'&&
-        layoutKeys.every(k=>typeof comparison.anchor[k]==='string'&&comparison.anchor[k].length<30)) {
-        layoutAnchor=Object.fromEntries(layoutKeys.map(k=>[k,comparison.anchor[k]]));
+      if(comparison&&comparison.anchor&&typeof comparison.anchor==='object') {
+        const legacyAnchor={secondaryPattern:'none',secondaryX:'50',secondaryY:'50',secondaryOpacity:'65',...comparison.anchor};
+        if(layoutKeys.every(k=>typeof legacyAnchor[k]==='string'&&legacyAnchor[k].length<30))
+          layoutAnchor=Object.fromEntries(layoutKeys.map(k=>[k,legacyAnchor[k]]));
         layoutChoice=[0,1,2].includes(comparison.choice)?comparison.choice:0;
       }
       designSlots=validatedDesignSlots(obj.designSlots);
