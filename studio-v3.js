@@ -21,6 +21,21 @@
   let draftTimer = null;
   let layoutAnchor = null, layoutChoice = 0;
   let designSlots = [null,null,null];
+  let canvasLocked = false;
+  // Session-only mobile editing mode. Locked artwork cannot capture touch drags,
+  // allowing vertical scrolling across the imported template on small screens.
+  function setCanvasLocked(locked) {
+    canvasLocked=Boolean(locked);
+    canvas.style.touchAction=canvasLocked?'pan-y':'none';
+    for(const el of [...overlays,...extraLogos.map(item=>item.el)]) {
+      el.style.pointerEvents=canvasLocked?'none':'auto';
+      el.style.touchAction=canvasLocked?'pan-y':'none';
+      el.style.cursor=canvasLocked?'default':'grab';
+    }
+    $('canvasLock').textContent=canvasLocked?'Unlock artwork to edit':'Lock artwork to scroll';
+    $('canvasLock').setAttribute('aria-pressed',String(canvasLocked));
+    $('canvasLockStatus').textContent=canvasLocked?'Artwork locked: swipe over the canvas to scroll the page. Unlock to drag the number or logos.':'Artwork editable: drag the number or logos. Lock artwork when you need to scroll on a phone.';
+  }
   const DRAFT_DB = 'racewrap-concept-drafts';
   function openDraftDB() {
     return new Promise((resolve,reject)=>{
@@ -142,7 +157,7 @@
     for (const item of extraLogos) item.el.style.display=ready?'block':'none';
     $('patternLayer').style.display=ready&&($('pattern').value!=='none'||$('secondaryPattern').value!=='none')?'block':'none';
     $('arrangeLogos').disabled=!ready||!logoItems().length;
-    drawPattern();drawPanelOverlay();drawRuler();scheduleAutosave();
+    drawPattern();drawPanelOverlay();drawRuler();setCanvasLocked(canvasLocked);scheduleAutosave();
   }
   // Procedural graphics; optional on-device AI selects controls, not image pixels.
   function patternShapes(style,accent,trim) {
@@ -369,7 +384,7 @@
   function draggable(el) {
     let pointer=null;
     el.addEventListener('pointerdown',e=>{
-      if(!state.source)return;
+      if(!state.source||canvasLocked)return;
       pointer={id:e.pointerId,x:e.clientX,y:e.clientY,left:el.offsetLeft,top:el.offsetTop};
       el.setPointerCapture(e.pointerId);el.style.cursor='grabbing';e.preventDefault();
     });
@@ -814,6 +829,7 @@
   $('undoPoint').addEventListener('click',()=>{draftPanel.pop();drawPanelOverlay();});
   $('clearPanels').addEventListener('click',()=>{panelMasks.length=0;panelNames.length=0;draftPanel=[];drawPattern();drawPanelOverlay();scheduleAutosave();});
   $('enableAI').addEventListener('click',enableLocalAI);
+  $('canvasLock').addEventListener('click',()=>setCanvasLocked(!canvasLocked));
   $('layoutRebase').addEventListener('click',captureLayout);
   for(let i=0;i<3;i++){
     $('slotSave'+i).addEventListener('click',()=>captureDesignSlot(i));
