@@ -1,0 +1,47 @@
+'use strict';
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const {chromium}=require('playwright');
+const base=process.env.BASE_URL||'https://racewrap-ai-studio.onrender.com';
+(async()=>{
+ const browser=await chromium.launch({headless:true,executablePath:process.env.CHROME_PATH||undefined,args:['--no-sandbox']});
+ const context=await browser.newContext({viewport:{width:390,height:844},hasTouch:true,isMobile:true,acceptDownloads:true});
+ const page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
+ try {
+  const response=await page.goto(base+'/?paneltest='+Date.now(),{waitUntil:'domcontentloaded'});
+  assert.equal(response.status(),200);
+  await page.waitForFunction(()=>document.querySelector('#panelDimensions')&&document.querySelector('#panelName'));
+  const svg='<svg xmlns="http://www.w3.org/2000/svg" width="800" height="500"><rect width="800" height="500" fill="white"/></svg>';
+  await page.locator('#template').setInputFiles({name:'licensed-panels.svg',mimeType:'image/svg+xml',buffer:Buffer.from(svg)});
+  await page.waitForFunction(()=>document.querySelector('#sourceMeta').textContent.includes('licensed-panels'));
+  await page.locator('#panelName').fill('Left quarter');
+  await page.locator('#tracePanel').click();
+  await page.locator('#panelOverlay').scrollIntoViewIfNeeded();
+  let box=await page.locator('#panelOverlay').boundingBox();
+  for(const [x,y] of [[.1,.2],[.6,.2],[.6,.6],[.1,.6]])await page.touchscreen.tap(box.x+box.width*x,box.y+box.height*y);
+  await page.locator('#finishPanel').click();
+  assert.match(await page.locator('#panelDimensions').textContent(),/Left quarter/);
+  assert.match(await page.locator('#panelDimensions').textContent(),/two-point ruler/);
+  await page.locator('#inch').fill('20');
+  await page.locator('#measureSpan').click();
+  await page.locator('#rulerOverlay').scrollIntoViewIfNeeded();
+  box=await page.locator('#rulerOverlay').boundingBox();
+  await page.touchscreen.tap(box.x+box.width*.2,box.y+box.height*.5);
+  await page.touchscreen.tap(box.x+box.width*.7,box.y+box.height*.5);
+  const dimensions=await page.locator('#panelDimensions').textContent();
+  assert.match(dimensions,/Left quarter/);
+  assert.match(dimensions,/approx 20\.0 × 10\.0 in bounding box/);
+  assert.match(dimensions,/200\.0 in² traced area/);
+  const [dl]=await Promise.all([page.waitForEvent('download'),page.locator('#saveProject').click()]);
+  const project=JSON.parse(fs.readFileSync(await dl.path(),'utf8'));
+  assert.deepEqual(project.panelNames,['Left quarter']);
+  await page.locator('#clearPanels').click();
+  assert.match(await page.locator('#panelDimensions').textContent(),/Trace a panel/);
+  await page.locator('#openProject').setInputFiles({name:'named-panel.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(project))});
+  await page.waitForFunction(()=>document.querySelector('#panelDimensions').textContent.includes('Left quarter'));
+  assert.match(await page.locator('#panelDimensions').textContent(),/approx 20\.0 × 10\.0 in bounding box/);
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,'mobile overflow');
+  assert.deepEqual(errors,[],'page JS errors');
+  console.log('PASS named panel reference dimensions, calibrated ruler, project round-trip, mobile layout, zero JS errors');
+ } finally {await browser.close();}
+})().catch(e=>{console.error(e);process.exit(1);});
