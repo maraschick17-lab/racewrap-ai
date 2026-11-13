@@ -9,6 +9,29 @@
   const canvas = $('canvas');
   const image = $('bodyImage');
   const overlays = [$('graphic'),$('sponsorGraphic'),$('logoGraphic')];
+  // Original lettering treatments use system fonts; no manufacturer artwork.
+  const lettering = document.createElement('fieldset');
+  lettering.style.cssText='margin:12px 0;padding:12px;border:1px solid #48648b;border-radius:12px;min-width:0';
+  lettering.innerHTML='<legend>Race number lettering</legend><label for="numberStyle">Lettering treatment</label><select id="numberStyle"><option value="classic">Classic outline</option><option value="speed">Speed italic</option><option value="block">Heavy block</option></select><label for="numberScale">Number size <output id="numberScaleValue">100%</output></label><input id="numberScale" type="range" min="60" max="180" step="5" value="100"><p class="muted">Accent fill and trim outline follow your palette. Drag the number on the car to position it.</p>';
+  $('number').closest('label') ? $('number').closest('label').insertAdjacentElement('afterend',lettering) : $('number').insertAdjacentElement('afterend',lettering);
+  function numberTreatment() {
+    const style=['classic','speed','block'].includes($('numberStyle').value)?$('numberStyle').value:'classic';
+    const scale=clamp(Number($('numberScale').value)||100,60,180)/100;
+    return {style,scale,stroke:style==='block'?5:2,italic:style==='speed'};
+  }
+  function renderLettering() {
+    const t=numberTreatment(), unit=canvas.clientWidth/1000;
+    const el=$('graphic');
+    el.style.fontSize=(75*t.scale*unit)+'px';
+    el.style.lineHeight='1';el.style.fontFamily='Arial,sans-serif';el.style.fontWeight='900';
+    el.style.fontStyle=t.italic?'italic':'normal';el.style.textShadow='none';
+    el.style.webkitTextStroke=(t.stroke*unit)+'px '+$('trim').value;
+    el.style.paintOrder='stroke fill';
+    $('numberScaleValue').textContent=Math.round(t.scale*100)+'%';
+  }
+  new ResizeObserver(renderLettering).observe(canvas);
+  $('numberStyle').addEventListener('input',refresh);
+  $('numberScale').addEventListener('input',refresh);
   const extraLogos = [];
   let logoLayoutUndo=null;
   $('logoGraphic').style.zIndex='20';
@@ -185,7 +208,7 @@
     const ready=!!state.source;
     $('graphic').textContent=$('number').value.trim()||'17';
     $('graphic').style.color=$('accent').value;
-    $('graphic').style.webkitTextStroke='2px '+$('trim').value;
+    renderLettering();
     $('sponsorGraphic').textContent=$('sponsor').value.trim();
     $('graphic').style.display=ready?'block':'none';
     $('sponsorGraphic').style.display=ready&&!!$('sponsor').value.trim()?'block':'none';
@@ -675,7 +698,7 @@
   }
   // Saved directions are actual captured style controls, not new AI inference.
   // Sponsor artwork, placement, template and panel geometry remain unchanged.
-  const designSlotKeys=['number','base','accent','trim','pattern','patternAngle','patternScale','patternOpacity','patternX','patternY','secondaryPattern','secondaryX','secondaryY','secondaryOpacity'];
+  const designSlotKeys=['numberStyle','numberScale','number','base','accent','trim','pattern','patternAngle','patternScale','patternOpacity','patternX','patternY','secondaryPattern','secondaryX','secondaryY','secondaryOpacity'];
   function updateDesignSlots() {
     const names=['A','B','C'];
     for(let i=0;i<3;i++){
@@ -706,9 +729,10 @@
     return [0,1,2].map(i=>{
       const item=raw[i];
       if(!item||typeof item!=='object'||Array.isArray(item))return null;
-      const defaults={secondaryPattern:'none',secondaryX:'50',secondaryY:'50',secondaryOpacity:'65'};
+      const defaults={numberStyle:'classic',numberScale:'100',secondaryPattern:'none',secondaryX:'50',secondaryY:'50',secondaryOpacity:'65'};
       const normalized={...defaults,...item};
       if(!designSlotKeys.every(key=>typeof normalized[key]==='string'&&normalized[key].length<40))return null;
+      if(!['classic','speed','block'].includes(normalized.numberStyle)||!Number.isFinite(Number(normalized.numberScale))||Number(normalized.numberScale)<60||Number(normalized.numberScale)>180)return null;
       if(!['none','slashes','chevrons','lightning','checker','ribbons','burst'].includes(item.pattern))return null;
       if(!['none','slashes','chevrons','lightning','checker','ribbons','burst'].includes(normalized.secondaryPattern))return null;
       if(!['base','accent','trim'].every(key=>/^#[0-9a-f]{6}$/i.test(item[key])))return null;
@@ -857,8 +881,10 @@
     if(el.style.display==='none')return '';
     const left=parseFloat(el.style.left)||0,top=parseFloat(el.style.top)||0;
     const x=left/100*state.width,y=top/100*state.height;
-    const font=fontSize*state.width/1000;
-    return '<text x="'+x.toFixed(2)+'" y="'+(y+font).toFixed(2)+'" font-family="Arial,sans-serif" font-weight="900" font-size="'+font.toFixed(2)+'" fill="'+safe(getComputedStyle(el).color)+'">'+safe(el.textContent)+'</text>';
+    const isNumber=el===$('graphic'), t=numberTreatment();
+    const font=fontSize*state.width/1000*(isNumber?t.scale:1);
+    const attrs=isNumber?' font-style="'+(t.italic?'italic':'normal')+'" stroke="'+safe($('trim').value)+'" stroke-width="'+(t.stroke*state.width/1000).toFixed(2)+'" paint-order="stroke fill"':'';
+    return '<text x="'+x.toFixed(2)+'" y="'+(isNumber?y:y+font).toFixed(2)+'"'+(isNumber?' dominant-baseline="text-before-edge"':'')+' font-family="Arial,sans-serif" font-weight="900" font-size="'+font.toFixed(2)+'" fill="'+safe(getComputedStyle(el).color)+'"'+attrs+'>'+safe(el.textContent)+'</text>';
   }
   function conceptSVG() {
     if(!state.source)return '';
@@ -959,7 +985,7 @@
   }
   function project() {
     const fields={};
-    for(const id of ['prompt','body','number','base','accent','trim','sponsor','px','inch','pattern','patternOpacity','patternAngle','patternScale','patternX','patternY','secondaryPattern','secondaryX','secondaryY','secondaryOpacity','logoSize'])fields[id]=$(id).value;
+    for(const id of ['numberStyle','numberScale','prompt','body','number','base','accent','trim','sponsor','px','inch','pattern','patternOpacity','patternAngle','patternScale','patternX','patternY','secondaryPattern','secondaryX','secondaryY','secondaryOpacity','logoSize'])fields[id]=$(id).value;
     const positions={};
     for(const el of overlays)positions[el.id]={left:el.style.left,top:el.style.top,width:el.style.width,zIndex:el.style.zIndex};
     return {version:2,fields,positions,layoutComparison:layoutAnchor?{anchor:layoutAnchor,choice:layoutChoice}:null,designSlots:designSlots.map(slot=>slot?{...slot}:null),template:{data:state.source,name:state.sourceName,type:state.sourceType,width:state.width,height:state.height},logo:{data:state.logo,name:state.logoName,type:state.logoType},extraLogos:extraLogos.map(item=>({data:item.data,name:item.name,type:item.type,left:item.el.style.left,top:item.el.style.top,width:item.el.style.width,zIndex:item.el.style.zIndex})),panelMasks:panelMasks.map(p=>p.map(([x,y])=>[x,y])),panelNames:panelNames.slice(),panelFieldMeasurements:panelFieldMeasurements.map(entry=>({width:validFieldInches(entry?.width),height:validFieldInches(entry?.height)})),rulerPoints:rulerPoints.map(([x,y])=>[x,y])};
@@ -1000,7 +1026,7 @@
       if(obj.template.data.length>18*1024*1024)throw Error('Template too large');
       logoLayoutUndo=null;$('undoArrangeLogos').disabled=true;
       clearExtraLogos();state.logo='';state.logoName='';state.logoType='';$('logoGraphic').src='';$('logoGraphic').style.zIndex='20';
-      for(const [key,value] of Object.entries({secondaryPattern:'none',secondaryX:'50',secondaryY:'50',secondaryOpacity:'65',...(obj.fields||{})}))if($(key)&&typeof value==='string'&&value.length<3000)$(key).value=value;
+      for(const [key,value] of Object.entries({numberStyle:'classic',numberScale:'100',secondaryPattern:'none',secondaryX:'50',secondaryY:'50',secondaryOpacity:'65',...(obj.fields||{})}))if($(key)&&typeof value==='string'&&value.length<3000)$(key).value=value;
       setTemplate({data:obj.template.data,width:Number(obj.template.width),height:Number(obj.template.height)},String(obj.template.name||'Restored template').slice(0,100),obj.template.type||'png');
       if(obj.logo&&/^data:image\/png;base64,/.test(obj.logo.data||'')) {
         state.logo=obj.logo.data;state.logoName=obj.logo.name||'';state.logoType=obj.logo.type||'png';
