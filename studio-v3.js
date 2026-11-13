@@ -480,6 +480,26 @@
     $('sourceMeta').textContent+=' · Original visual concept only; NOT measured panels';
     canvas.scrollIntoView({behavior:'smooth',block:'center'});
   };
+  // Use the racer's own car photograph when our generic concept artwork is not body-faithful.
+  // Photos give an honest visual preview, never a verified orthographic cut template.
+  window.RaceWrapLoadOwnCar = async (file,carName='Stock Car') => {
+    if(!['Late Model','Modified','Stock Car'].includes(carName))throw Error('Unsupported car type');
+    if(!file || !['png','jpeg','webp'].includes(fileKind(file)) || file.size>MAX_FILE)throw Error('Choose a PNG, JPG or WebP car photo under 15 MB.');
+    if(state.source) {
+      const json=JSON.stringify(project());
+      if(json.length>30*1024*1024)throw Error('Current project is too large to back up. Download editable JSON first.');
+      try {
+        await draftAction('write',{json,savedAt:Date.now()},'previous-car');
+        $('restorePrevious').disabled=false;
+      }catch(err){throw Error('Could not back up current design. Save editable JSON before replacing the car photo.');}
+    }
+    await importTemplate(file);
+    if(state.sourceName!==file.name)throw Error('Car photo could not be imported.');
+    $('body').value=carName==='Modified'?'modified':carName==='Stock Car'?'stock':'late';
+    $('sourceMeta').textContent+=' — YOUR CAR PHOTO: perspective is unverified, NOT a measured wrap template or print-ready.';
+    scheduleAutosave();
+    canvas.scrollIntoView({behavior:'smooth',block:'center'});
+  };
   function logoItems() {
     return (state.logo?[{el:$('logoGraphic'),data:state.logo,name:state.logoName,type:state.logoType}]:[]).concat(extraLogos);
   }

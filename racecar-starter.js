@@ -13,8 +13,8 @@ document.addEventListener('DOMContentLoaded',()=>{
    selected=car;
    image.src=choice.image;image.alt='Blank white '+choice.name+' race car concept';
    label.textContent='Blank '+choice.name;
-   button.disabled=false;button.textContent='Start designing this car';
-   status.textContent='Selected '+choice.name+'. Start designing without uploading a template.';
+   button.disabled=false;button.textContent=car==='stock'?'Use unverified Stock Car concept':'Start designing this car';
+   status.textContent=car==='stock'?'Stock Car starter artwork is NOT body-accurate. For a faithful visual preview, upload a photo of your actual car.':'Selected '+choice.name+'. Start designing without uploading a template.';
    document.querySelectorAll('[data-car]').forEach(el=>{
      const active=el.dataset.car===car;
      el.classList.toggle('car-choice-active',active);
@@ -30,6 +30,23 @@ document.addEventListener('DOMContentLoaded',()=>{
      button.textContent=choices[selected].name+' loaded';
      status.textContent='Concept loaded into editor. Artwork is not calibrated for printing.';
    }catch(error){button.textContent='Try again';button.disabled=false;status.textContent=error.message;}
+ });
+ const ownPhoto=document.getElementById('ownCarPhoto');
+ const ownButton=document.getElementById('ownCarButton');
+ ownButton.addEventListener('click',()=>ownPhoto.click());
+ ownPhoto.addEventListener('change',async()=>{
+   const file=ownPhoto.files?.[0];
+   ownPhoto.value='';
+   if(!file)return;
+   ownButton.disabled=true;ownButton.textContent='Loading your photo…';
+   try {
+     await window.RaceWrapLoadOwnCar(file,choices[selected].name);
+     status.textContent='Your '+choices[selected].name+' photo is in the editor. Perspective is unverified; NOT print-ready.';
+     ownButton.textContent='Change my car photo';
+   }catch(error){
+     status.textContent=error.message||'Could not load photo. Please try another image.';
+     ownButton.textContent='Use a photo of my actual car';
+   }finally{ownButton.disabled=false;}
  });
  choose('late');
 });
