@@ -288,7 +288,34 @@
     if(style==='checker') {for(let r=0;r<3;r++)for(let c=0;c<8;c++)if((r+c)%2===0)shapes+='<rect x="'+(60+c*46)+'" y="'+(300+r*46)+'" width="46" height="46" fill="'+accent+'"/>';}
     if(style==='ribbons') {for(let i=0;i<6;i++)shapes+='<path d="M'+(25+i*32)+' 450 Q'+(150+i*32)+' 260 '+(280+i*32)+' 70" fill="none" stroke="'+(i%2?trim:accent)+'" stroke-width="'+(i%2?12:22)+'" stroke-linecap="round"/>';}
     if(style==='burst') {for(let i=0;i<9;i++){const a=(-72+i*18)*Math.PI/180,b=a+0.13;shapes+='<path d="M120 380 L'+(120+420*Math.cos(a)).toFixed(1)+' '+(380+420*Math.sin(a)).toFixed(1)+' L'+(120+420*Math.cos(b)).toFixed(1)+' '+(380+420*Math.sin(b)).toFixed(1)+' Z" fill="'+(i%2?trim:accent)+'"/>';}}
+    // Original Bezier compositions, shared by editor and concept exports.
+    if(style==='flames') shapes='<g data-composition="flames" transform="translate(0 180) scale(1 .5)" fill="'+accent+'" stroke="'+trim+'" stroke-width="5" stroke-linejoin="round"><path d="M35 405 C165 335 200 445 340 340 C295 353 270 325 293 300 C342 250 418 310 512 204 C463 234 419 215 441 186 C487 126 605 171 742 86 C686 171 607 204 552 225 C626 219 681 239 757 190 C695 280 577 274 489 319 C540 310 577 322 631 301 C541 382 412 352 321 407 C225 463 124 437 35 450 Z"/><path d="M73 337 C144 273 211 309 273 251 C247 295 208 317 166 320 C203 332 225 344 259 326 C211 379 151 340 73 365 Z"/></g>';
+    if(style==='scallops') shapes='<g data-composition="scallops" transform="translate(0 180) scale(1 .5)" fill="'+accent+'" stroke="'+trim+'" stroke-width="7" stroke-linejoin="round"><path d="M25 205 C203 210 407 231 803 100 C577 256 359 296 25 281 Z"/><path d="M25 302 C207 308 443 351 862 241 C604 406 310 395 25 374 Z"/><path d="M25 397 C164 407 315 439 618 405 C436 490 224 475 25 451 Z"/></g>';
+    if(style==='sweep') shapes='<g data-composition="sweep" transform="translate(0 180) scale(1 .5)"><path d="M25 436 C242 455 435 403 579 282 L859 103 L695 295 C527 474 301 504 25 482 Z" fill="'+accent+'" stroke="'+trim+'" stroke-width="6"/><path d="M25 400 C250 432 447 365 571 256 L798 105 C603 284 420 413 25 419 Z" fill="'+trim+'"/><path d="M424 444 L468 425 L420 484 L376 494 Z M487 413 L528 388 L477 465 L435 478 Z M549 374 L590 344 L534 439 L492 455 Z" fill="'+trim+'"/></g>';
     return shapes;
+  }
+  const compositionLooks=[
+    {id:'flames',name:'Liquid fire',accent:'#f04b24',trim:'#fff0bc',base:'#16191e'},
+    {id:'scallops',name:'Heritage scallops',accent:'#22c5be',trim:'#f8eed5',base:'#16191e'},
+    {id:'sweep',name:'Velocity sweep',accent:'#b6ed32',trim:'#f4f7ff',base:'#16191e'}
+  ];
+  for(const id of ['pattern','secondaryPattern'])for(const look of compositionLooks){
+    const option=document.createElement('option');option.value=look.id;option.textContent=look.name;$(id).appendChild(option);
+  }
+  const compositionPanel=document.createElement('fieldset');
+  compositionPanel.style.cssText='margin:16px 0;padding:12px;border:1px solid #547591;border-radius:12px;min-width:0';
+  compositionPanel.innerHTML='<legend>Signature wrap compositions</legend><p class="muted">Original procedural artwork with flowing curves and contrasting pinlines. Apply a look, then move, scale and rotate it. Trace panel masks to keep graphics off wheels and windows. Concept only, not print-ready.</p><div id="compositionLooks" style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px"></div>';
+  $('pattern').before(compositionPanel);
+  for(const look of compositionLooks){
+    const button=document.createElement('button');button.type='button';button.dataset.compositionLook=look.id;
+    button.style.cssText='padding:6px;min-width:0;background:#152232;border:1px solid #647c99;border-radius:9px;color:white;font-size:12px';
+    button.innerHTML='<svg aria-hidden="true" viewBox="0 0 900 550" style="display:block;width:100%;background:'+look.base+';border-radius:5px">'+patternShapes(look.id,look.accent,look.trim)+'</svg><span>'+look.name+'</span>';
+    button.addEventListener('click',()=>{
+      const fields={pattern:look.id,secondaryPattern:'none',base:look.base,accent:look.accent,trim:look.trim,patternAngle:'0',patternScale:'100',patternOpacity:'100',patternX:'35',patternY:'50'};
+      for(const [id,value] of Object.entries(fields))$(id).value=value;
+      refresh();scheduleAutosave();status(look.name+' applied. Original procedural concept; adjust position, scale and angle to fit your photo or template.');
+    });
+    compositionPanel.querySelector('#compositionLooks').appendChild(button);
   }
   function drawPattern() {
     const layer=$('patternLayer'),accent=$('accent').value,trim=$('trim').value;
@@ -302,7 +329,7 @@
     }
     const masks=panelMasks.map(p=>'<polygon points="'+p.map(([x,y])=>(x*1000).toFixed(2)+','+(y*550).toFixed(2)).join(' ')+'"/>').join('');
     const clipped=panelMasks.length?'<defs><clipPath id="racewrapPanelClip">'+masks+'</clipPath></defs><g clip-path="url(#racewrapPanelClip)">'+shapes+'</g>':shapes;
-    layer.innerHTML='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 550" preserveAspectRatio="none" width="100%" height="100%">'+clipped+'</svg>';
+    layer.innerHTML='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 550" preserveAspectRatio="none" width="100%" height="100%" style="display:block;width:100%;height:100%">'+clipped+'</svg>';
     layer.style.opacity=String(Number($('patternOpacity').value)/100);
   }
   // Reject crossed, repeated or effectively zero-area traced polygons.
@@ -668,7 +695,7 @@
     const words=prompt.toLowerCase();
     const colors=Object.entries(palette).filter(([name])=>new RegExp('\\b'+name+'\\b').test(words));
     const number=words.match(/(?:number|#|car\s*#)\s*(\d{1,4})/);
-    const pattern=words.includes('lightning')?'lightning':words.includes('checker')?'checker':words.includes('chevron')?'chevrons':words.includes('ribbon')||words.includes('wave')?'ribbons':words.includes('burst')||words.includes('sunray')?'burst':words.includes('stripe')||words.includes('slash')?'slashes':null;
+    const pattern=words.includes('flame')||words.includes('fire')?'flames':words.includes('scallop')?'scallops':words.includes('sweep')?'sweep':words.includes('lightning')?'lightning':words.includes('checker')?'checker':words.includes('chevron')?'chevrons':words.includes('ribbon')||words.includes('wave')?'ribbons':words.includes('burst')||words.includes('sunray')?'burst':words.includes('stripe')||words.includes('slash')?'slashes':null;
     return {base:colors[0]&&colors[0][1],accent:colors[1]&&colors[1][1]||colors[0]&&colors[0][1],trim:colors[2]&&colors[2][1],number:number&&number[1],pattern};
   }
   // The small local model can return free-form design cues. Map its actual
@@ -689,8 +716,8 @@
   function applyDesign(design) {
     for(const field of ['base','accent','trim'])if(/^#[0-9a-f]{6}$/i.test(design[field]||''))$(field).value=design[field];
     if(design.number)$('number').value=String(design.number).replace(/[^a-zA-Z0-9]/g,'').slice(0,4);
-    if(['none','slashes','chevrons','lightning','checker','ribbons','burst'].includes(design.pattern))$('pattern').value=design.pattern;
-    if(['none','slashes','chevrons','lightning','checker','ribbons','burst'].includes(design.secondaryPattern))$('secondaryPattern').value=design.secondaryPattern;
+    if(['none','slashes','chevrons','lightning','checker','ribbons','burst','flames','scallops','sweep'].includes(design.pattern))$('pattern').value=design.pattern;
+    if(['none','slashes','chevrons','lightning','checker','ribbons','burst','flames','scallops','sweep'].includes(design.secondaryPattern))$('secondaryPattern').value=design.secondaryPattern;
     for(const [key,min,max] of [['patternAngle',-75,75],['patternScale',50,180],['patternOpacity',5,95],['patternX',0,100],['patternY',0,100],['secondaryX',0,100],['secondaryY',0,100],['secondaryOpacity',0,100]]) {
       if(design[key]!==undefined && design[key]!==null && design[key]!=='' && Number.isFinite(Number(design[key])))$(key).value=clamp(Number(design[key]),min,max);
     }
@@ -733,8 +760,8 @@
       const normalized={...defaults,...item};
       if(!designSlotKeys.every(key=>typeof normalized[key]==='string'&&normalized[key].length<40))return null;
       if(!['classic','speed','block'].includes(normalized.numberStyle)||!Number.isFinite(Number(normalized.numberScale))||Number(normalized.numberScale)<60||Number(normalized.numberScale)>180)return null;
-      if(!['none','slashes','chevrons','lightning','checker','ribbons','burst'].includes(item.pattern))return null;
-      if(!['none','slashes','chevrons','lightning','checker','ribbons','burst'].includes(normalized.secondaryPattern))return null;
+      if(!['none','slashes','chevrons','lightning','checker','ribbons','burst','flames','scallops','sweep'].includes(item.pattern))return null;
+      if(!['none','slashes','chevrons','lightning','checker','ribbons','burst','flames','scallops','sweep'].includes(normalized.secondaryPattern))return null;
       if(!['base','accent','trim'].every(key=>/^#[0-9a-f]{6}$/i.test(item[key])))return null;
       if(!/^[a-zA-Z0-9]{1,4}$/.test(item.number))return null;
       for(const [key,min,max] of [['patternAngle',-75,75],['patternScale',50,180],['patternOpacity',5,95],['patternX',0,100],['patternY',0,100],['secondaryX',0,100],['secondaryY',0,100],['secondaryOpacity',0,100]]) {
