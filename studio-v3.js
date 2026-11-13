@@ -517,6 +517,7 @@
     selectedLogo=clamp(index,0,Math.max(0,items.length-1));
     if(items[selectedLogo]) $('logoSize').value=parseFloat(items[selectedLogo].el.style.width)||22;
     renderLogoList();
+    updateSponsorSelection();
   }
 
   // Manual deterministic layout aid; never label this as AI.
@@ -1175,6 +1176,82 @@
     try {await draftAction('delete');$('recoverDraft').disabled=true;$('clearDraft').disabled=true;$('autosaveStatus').textContent='Browser draft cleared. Current canvas remains open.';}
     catch(err){$('autosaveStatus').textContent='Cannot clear draft: '+err.message;}
   });
+
+  // Editor-only selection chrome. Exports enumerate artwork explicitly, so these
+  // controls never become part of a concept PNG, SVG or saved project.
+  const sponsorFrame=document.createElement('div');
+  sponsorFrame.id='sponsorSelection';
+  sponsorFrame.style.cssText='position:absolute;display:none;pointer-events:none;border:2px solid #45dcff;box-sizing:border-box;z-index:45';
+  const resizeHandle=document.createElement('button');
+  resizeHandle.id='sponsorResize';resizeHandle.type='button';
+  resizeHandle.setAttribute('aria-label','Resize selected sponsor. Drag corner or use arrow keys; Shift for larger steps.');
+  resizeHandle.title='Drag to resize sponsor ? Arrow keys for precision ? Escape to cancel';
+  resizeHandle.textContent='?';
+  resizeHandle.style.cssText='position:absolute;right:-10px;bottom:-10px;width:36px;height:36px;min-height:0;padding:0;border:2px solid #071822;border-radius:9px;background:#45dcff;color:#071822;font-size:24px;line-height:28px;pointer-events:auto;touch-action:none;cursor:nwse-resize';
+  sponsorFrame.appendChild(resizeHandle);canvas.appendChild(sponsorFrame);
+  const resizeHelp=document.createElement('p');
+  resizeHelp.className='muted';resizeHelp.textContent='Select a sponsor on the car, then drag its cyan corner to resize. Arrow keys resize precisely; Escape cancels a drag.';
+  $('logoSize').parentElement.appendChild(resizeHelp);
+  let sponsorResize=null;
+  function updateSponsorSelection() {
+    const item=logoItems()[selectedLogo],el=item?.el;
+    const visible=!!(state.source&&el&&el.complete&&el.naturalWidth&&!canvasLocked&&!tracingPanel&&!measuringSpan&&!patternMoveMode);
+    const display=visible?'block':'none';
+    if(sponsorFrame.style.display!==display)sponsorFrame.style.display=display;
+    if(!visible)return;
+    for(const [key,value] of Object.entries({left:el.offsetLeft+'px',top:el.offsetTop+'px',width:el.offsetWidth+'px',height:el.offsetHeight+'px'}))
+      if(sponsorFrame.style[key]!==value)sponsorFrame.style[key]=value;
+  }
+  function resizeSponsor(el,width) {
+    const box=canvas.getBoundingClientRect();
+    const ratio=el.naturalHeight/el.naturalWidth;
+    // Keep the top-left anchored and preserve the image aspect ratio, within
+    // the artwork bounds. Existing slider/import placements remain compatible.
+    const max=Math.max(0,Math.min(Number($('logoSize').max)||100,
+      (box.width-el.offsetLeft)/box.width*100,
+      (box.height-el.offsetTop)/(box.width*ratio)*100));
+    const min=Math.min(Number($('logoSize').min)||1,max);
+    const value=clamp(width,min,max);
+    el.style.width=value.toFixed(3)+'%';$('logoSize').value=String(value);
+    updateSponsorSelection();
+  }
+  resizeHandle.addEventListener('pointerdown',e=>{
+    if(e.pointerType==='mouse'&&e.button!==0)return;
+    const el=logoItems()[selectedLogo]?.el;
+    if(!el||canvasLocked)return;
+    const box=canvas.getBoundingClientRect(),ratio=el.naturalHeight/el.naturalWidth;
+    sponsorResize={id:e.pointerId,el,x:e.clientX,y:e.clientY,width:el.style.width,start:parseFloat(el.style.width),canvasWidth:box.width,ratio};
+    resizeHandle.setPointerCapture(e.pointerId);e.preventDefault();e.stopPropagation();
+  });
+  resizeHandle.addEventListener('pointermove',e=>{
+    const r=sponsorResize;if(!r||e.pointerId!==r.id)return;
+    // Project motion onto the aspect-ratio diagonal: either axis can resize.
+    const delta=((e.clientX-r.x)+r.ratio*(e.clientY-r.y))/(1+r.ratio*r.ratio);
+    resizeSponsor(r.el,r.start+delta/r.canvasWidth*100);e.preventDefault();
+  });
+  function finishSponsorResize(cancel=false) {
+    const r=sponsorResize;if(!r)return;
+    sponsorResize=null;
+    if(cancel){r.el.style.width=r.width;$('logoSize').value=String(parseFloat(r.width));}
+    if(resizeHandle.hasPointerCapture(r.id))resizeHandle.releasePointerCapture(r.id);
+    updateSponsorSelection();scheduleAutosave();
+    status(cancel?'Sponsor resize cancelled.':'Sponsor resized. Position and proportions preserved.');
+  }
+  resizeHandle.addEventListener('pointerup',()=>finishSponsorResize());
+  resizeHandle.addEventListener('pointercancel',()=>finishSponsorResize(true));
+  resizeHandle.addEventListener('lostpointercapture',()=>finishSponsorResize(true));
+  document.addEventListener('keydown',e=>{if(e.key==='Escape'&&sponsorResize){e.preventDefault();finishSponsorResize(true);}});
+  resizeHandle.addEventListener('keydown',e=>{
+    if(!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key))return;
+    e.preventDefault();const el=logoItems()[selectedLogo]?.el;if(!el||canvasLocked)return;
+    resizeSponsor(el,parseFloat(el.style.width)+(e.shiftKey?5:1)*(['ArrowLeft','ArrowUp'].includes(e.key)?-1:1));scheduleAutosave();
+  });
+  new ResizeObserver(updateSponsorSelection).observe(canvas);
+  new MutationObserver(records=>{
+    if(records.some(r=>r.target!==sponsorFrame&&r.target!==resizeHandle))updateSponsorSelection();
+  }).observe(canvas,{attributes:true,attributeFilter:['style','src'],childList:true,subtree:true});
+  canvas.addEventListener('load',updateSponsorSelection,true);
+
   checkDraft();
   $('aiStatus').textContent=navigator.gpu?'Optional local WebGPU AI available to download, or use rule-based styling now.':window.LanguageModel?'Built-in browser AI may be available.':'Local WebGPU AI unavailable here; rule-based styling works.';
   calibrate();refresh();renderLogoList();updateLayoutButtons();updateDesignSlots();
