@@ -1300,6 +1300,57 @@
   }).observe(canvas,{attributes:true,attributeFilter:['style','src'],childList:true,subtree:true});
   canvas.addEventListener('load',updateSponsorSelection,true);
 
+  // Direct race-number sizing uses the same persisted lettering scale as exports.
+  const numberFrame=document.createElement('div');
+  numberFrame.id='numberSelection';
+  numberFrame.style.cssText='position:absolute;display:none;pointer-events:none;border:2px solid #ffce58;box-sizing:border-box;z-index:44';
+  const numberHandle=document.createElement('button');
+  numberHandle.id='numberResize';numberHandle.type='button';numberHandle.textContent='\u2198';
+  numberHandle.setAttribute('aria-label','Resize race number. Drag corner or use arrow keys; Escape cancels.');
+  numberHandle.style.cssText=resizeHandle.style.cssText+';background:#ffce58;right:-34px;bottom:-34px';
+  numberFrame.appendChild(numberHandle);canvas.appendChild(numberFrame);
+  lettering.querySelector('p').textContent='Drag the number to position it. Drag its gold corner on the car to resize; arrow keys adjust size, Shift makes larger steps, Escape cancels.';
+  let numberResize=null;
+  function updateNumberSelection(){
+    const el=$('graphic');
+    const visible=state.source&&el.textContent.trim()&&el.style.display!=='none'&&!canvasLocked&&!tracingPanel&&!measuringSpan&&!patternMoveMode;
+    const values={display:visible?'block':'none',left:el.offsetLeft+'px',top:el.offsetTop+'px',width:el.offsetWidth+'px',height:el.offsetHeight+'px'};
+    for(const [key,value] of Object.entries(values))if(numberFrame.style[key]!==value)numberFrame.style[key]=value;
+  }
+  function setNumberSize(value){
+    $('numberScale').value=String(Math.round(clamp(value,60,180)/5)*5);
+    refresh();updateNumberSelection();
+  }
+  numberHandle.addEventListener('pointerdown',e=>{
+    if((e.pointerType==='mouse'&&e.button!==0)||canvasLocked)return;
+    const el=$('graphic');
+    numberResize={id:e.pointerId,x:e.clientX,y:e.clientY,width:el.offsetWidth,height:el.offsetHeight,scale:Number($('numberScale').value)};
+    numberHandle.setPointerCapture(e.pointerId);e.preventDefault();e.stopPropagation();
+  });
+  numberHandle.addEventListener('pointermove',e=>{
+    const r=numberResize;if(!r||e.pointerId!==r.id)return;
+    const delta=((e.clientX-r.x)*r.width+(e.clientY-r.y)*r.height)/(r.width*r.width+r.height*r.height);
+    setNumberSize(r.scale*(1+delta));e.preventDefault();
+  });
+  function finishNumberResize(cancel=false){
+    const r=numberResize;if(!r)return;numberResize=null;
+    if(cancel)setNumberSize(r.scale);
+    if(numberHandle.hasPointerCapture(r.id))numberHandle.releasePointerCapture(r.id);
+    scheduleAutosave();status(cancel?'Number resize cancelled.':'Race number resized. Gold corner adjusts size; drag lettering to move.');
+  }
+  numberHandle.addEventListener('pointerup',()=>finishNumberResize());
+  numberHandle.addEventListener('pointercancel',()=>finishNumberResize(true));
+  numberHandle.addEventListener('lostpointercapture',()=>finishNumberResize(true));
+  document.addEventListener('keydown',e=>{if(e.key==='Escape'&&numberResize){e.preventDefault();finishNumberResize(true);}});
+  numberHandle.addEventListener('keydown',e=>{
+    if(!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key)||canvasLocked)return;
+    e.preventDefault();setNumberSize(Number($('numberScale').value)+(e.shiftKey?20:5)*(['ArrowLeft','ArrowUp'].includes(e.key)?-1:1));scheduleAutosave();
+  });
+  new ResizeObserver(updateNumberSelection).observe(canvas);
+  new MutationObserver(records=>{
+    if(records.some(r=>r.target!==numberFrame&&r.target!==numberHandle))updateNumberSelection();
+  }).observe(canvas,{attributes:true,attributeFilter:['style'],childList:true,characterData:true,subtree:true});
+
   // Session-only full-project history. Image data strings are shared between snapshots.
   const history = [];
   let historyIndex = -1, historyTimer, restoringHistory = false;
