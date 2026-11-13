@@ -911,6 +911,91 @@
     download(markup,'racewrap-concept.svg','image/svg+xml');
     status('Concept SVG downloaded. Not scaled for print or panel cut paths.');
   }
+  // Review the exact export composition without editing chrome or changing project state.
+  const reviewStyle=document.createElement('style');
+  reviewStyle.textContent=`
+    #conceptReview{width:100vw;max-width:none;height:100dvh;max-height:none;margin:0;padding:0;border:0;background:#0b1220;color:#eef4ff;box-sizing:border-box}
+    #conceptReview[open]{display:flex;flex-direction:column}
+    #conceptReview::backdrop{background:#000c}
+    .review-toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:12px 18px;border-bottom:1px solid #40516a}
+    .review-toolbar h2{font-size:18px;margin:0 auto 0 0}
+    .review-toolbar button{min-height:44px;padding:9px 14px}
+    #reviewViewport{flex:1;min-height:80px;overflow:hidden;position:relative;background:#e9edf3;touch-action:none;cursor:grab}
+    #reviewViewport:active{cursor:grabbing}
+    #reviewImage{position:absolute;max-width:none;pointer-events:none;user-select:none;transform-origin:0 0}
+    #reviewPalette{display:flex;gap:14px;flex-wrap:wrap;font:12px monospace}
+    #reviewPalette span{display:flex;gap:6px;align-items:center}
+    #reviewPalette i{display:inline-block;width:22px;height:22px;border:1px solid #8a9bb2;border-radius:4px}
+    #reviewNotice{font-size:12px;color:#f5cf85;margin:0;padding:8px 18px}
+    @media(max-width:650px){.review-toolbar{padding:8px;gap:6px}.review-toolbar h2{font-size:15px}#reviewPalette{gap:8px;font-size:11px}}
+  `;
+  document.head.appendChild(reviewStyle);
+  const reviewButton=document.createElement('button');
+  reviewButton.id='openReview';reviewButton.type='button';reviewButton.textContent='Review full-screen concept';
+  document.querySelector('.preview-head').appendChild(reviewButton);
+  const review=document.createElement('dialog');review.id='conceptReview';review.setAttribute('aria-labelledby','reviewTitle');
+  review.innerHTML=`<div class="review-toolbar"><h2 id="reviewTitle">Concept review</h2><button type="button" id="closeReview">Back to editing</button></div>
+    <div class="review-toolbar"><button type="button" id="reviewFit">Fit</button><button type="button" id="reviewZoomOut" aria-label="Zoom out">?</button><output id="reviewZoom" aria-live="polite">100%</output><button type="button" id="reviewZoomIn" aria-label="Zoom in">+</button>
+    <label style="margin:0">Backdrop <select id="reviewBackdrop" style="width:auto"><option value="#e9edf3">Light</option><option value="#101722">Dark</option><option value="#808080">Neutral gray</option></select></label>
+    <span id="reviewPalette"></span></div>
+    <div id="reviewViewport" tabindex="0" role="img" aria-label="Concept artwork. Drag to pan. Use plus and minus to zoom, arrow keys to pan, zero to fit."><img id="reviewImage" alt="Current wrap concept export composition" draggable="false"></div>
+    <p id="reviewNotice">Visual concept only ? Not print-ready ? Source geometry and physical fitment unverified. Drag to pan; +/? zoom; 0 fits.</p>
+    <div class="review-toolbar"><button type="button" id="reviewPNG">Download PNG</button><button type="button" id="reviewBoard">Presentation board</button><span id="reviewSource" class="muted"></span></div>`;
+  document.body.appendChild(review);
+  let reviewURL='',reviewScale=1,reviewX=0,reviewY=0,reviewFitScale=1,reviewDrag=null;
+  const viewport=$('reviewViewport'),reviewImage=$('reviewImage');
+  function paintReview(){
+    const w=state.width*reviewScale,h=state.height*reviewScale;
+    reviewX=w<=viewport.clientWidth?(viewport.clientWidth-w)/2:clamp(reviewX,viewport.clientWidth-w,0);
+    reviewY=h<=viewport.clientHeight?(viewport.clientHeight-h)/2:clamp(reviewY,viewport.clientHeight-h,0);
+    reviewImage.style.width=state.width+'px';reviewImage.style.height=state.height+'px';
+    reviewImage.style.transform='translate('+reviewX+'px,'+reviewY+'px) scale('+reviewScale+')';
+    $('reviewZoom').textContent=Math.round(reviewScale/reviewFitScale*100)+'%';
+  }
+  function fitReview(){
+    if(!review.open)return;
+    reviewFitScale=Math.min(viewport.clientWidth/state.width,viewport.clientHeight/state.height)*0.94;
+    reviewScale=reviewFitScale;reviewX=0;reviewY=0;paintReview();
+  }
+  function zoomReview(factor){
+    const previous=reviewScale;
+    reviewScale=clamp(reviewScale*factor,reviewFitScale,reviewFitScale*6);
+    reviewX=viewport.clientWidth/2-(viewport.clientWidth/2-reviewX)*reviewScale/previous;
+    reviewY=viewport.clientHeight/2-(viewport.clientHeight/2-reviewY)*reviewScale/previous;paintReview();
+  }
+  reviewButton.addEventListener('click',()=>{
+    const markup=conceptSVG();if(!markup){status('Choose a car or import a licensed template before reviewing.');return;}
+    reviewURL=URL.createObjectURL(new Blob([markup],{type:'image/svg+xml;charset=utf-8'}));reviewImage.src=reviewURL;
+    $('reviewTitle').textContent='Race #'+$('number').value+' / Concept review';
+    $('reviewSource').textContent='Source '+state.width+' ? '+state.height+' px. Zoom does not add source detail.';
+    $('reviewPalette').replaceChildren();
+    for(const id of ['base','accent','trim']){
+      const swatch=document.createElement('span'),chip=document.createElement('i');chip.style.background=$(id).value;
+      swatch.append(chip,document.createTextNode(id+' '+$(id).value.toUpperCase()));$('reviewPalette').append(swatch);
+    }
+    review.showModal();fitReview();
+  });
+  $('closeReview').addEventListener('click',()=>review.close());
+  review.addEventListener('close',()=>{reviewDrag=null;reviewImage.removeAttribute('src');if(reviewURL)URL.revokeObjectURL(reviewURL);reviewURL='';reviewButton.focus();});
+  $('reviewFit').addEventListener('click',fitReview);
+  $('reviewZoomIn').addEventListener('click',()=>zoomReview(1.5));
+  $('reviewZoomOut').addEventListener('click',()=>zoomReview(1/1.5));
+  $('reviewBackdrop').addEventListener('change',()=>{viewport.style.background=$('reviewBackdrop').value;});
+  $('reviewPNG').addEventListener('click',exportPNG);$('reviewBoard').addEventListener('click',exportBoard);
+  viewport.addEventListener('pointerdown',e=>{if(e.button!==0||reviewDrag)return;reviewDrag={id:e.pointerId,x:e.clientX,y:e.clientY,left:reviewX,top:reviewY};viewport.setPointerCapture(e.pointerId);e.preventDefault();});
+  viewport.addEventListener('pointermove',e=>{if(!reviewDrag||reviewDrag.id!==e.pointerId)return;reviewX=reviewDrag.left+e.clientX-reviewDrag.x;reviewY=reviewDrag.top+e.clientY-reviewDrag.y;paintReview();});
+  for(const event of ['pointerup','pointercancel','lostpointercapture'])viewport.addEventListener(event,e=>{if(reviewDrag?.id===e.pointerId)reviewDrag=null;});
+  viewport.addEventListener('wheel',e=>{e.preventDefault();zoomReview(e.deltaY<0?1.15:1/1.15);},{passive:false});
+  review.addEventListener('keydown',e=>{
+    if(e.target.closest('select'))return;
+    if(['+','=','-','0','ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key)){
+      e.preventDefault();
+      if(e.key==='+'||e.key==='=')zoomReview(1.5);else if(e.key==='-')zoomReview(1/1.5);else if(e.key==='0')fitReview();
+      else {reviewX+=e.key==='ArrowLeft'?40:e.key==='ArrowRight'?-40:0;reviewY+=e.key==='ArrowUp'?40:e.key==='ArrowDown'?-40:0;paintReview();}
+    }
+  });
+  new ResizeObserver(()=>{if(review.open)fitReview();}).observe(viewport);
+
   // Raster preview for sharing on phones; this is NOT a print-size export.
   async function exportPNG() {
     if(!state.source){status('Import a licensed template first.');return;}
