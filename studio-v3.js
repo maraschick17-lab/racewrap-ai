@@ -88,7 +88,9 @@
       return false;
     }
   }
+  let queueHistory = () => {};
   function scheduleAutosave() {
+    queueHistory();
     if(!state.source)return;
     clearTimeout(draftTimer);
     draftTimer=setTimeout(()=>{persistDraft();},1300);
@@ -1251,6 +1253,61 @@
     if(records.some(r=>r.target!==sponsorFrame&&r.target!==resizeHandle))updateSponsorSelection();
   }).observe(canvas,{attributes:true,attributeFilter:['style','src'],childList:true,subtree:true});
   canvas.addEventListener('load',updateSponsorSelection,true);
+
+  // Session-only full-project history. Image data strings are shared between snapshots.
+  const history = [];
+  let historyIndex = -1, historyTimer, restoringHistory = false;
+  const historyBar = document.createElement('div');
+  historyBar.className = 'actions';
+  historyBar.style.marginBottom = '12px';
+  historyBar.innerHTML = '<button type="button" class="secondary" id="undoDesign" disabled>Undo edit</button><button type="button" class="secondary" id="redoDesign" disabled>Redo edit</button><span id="historyStatus" class="muted" role="status">Session history starts when a car is loaded. Up to 30 edits.</span>';
+  document.querySelector('.preview-head').insertAdjacentElement('afterend', historyBar);
+  function updateHistory() {
+    $('undoDesign').disabled = restoringHistory || historyIndex < 1;
+    $('redoDesign').disabled = restoringHistory || historyIndex >= history.length - 1;
+    if (history.length) $('historyStatus').textContent = 'Session edit ' + (historyIndex + 1) + ' of ' + history.length + '. Download JSON to keep your current design.';
+  }
+  function captureHistory() {
+    clearTimeout(historyTimer);
+    if (restoringHistory || !state.source) return;
+    const snapshot = project();
+    if (historyIndex >= 0 && JSON.stringify(history[historyIndex]) === JSON.stringify(snapshot)) return;
+    history.splice(historyIndex + 1);
+    history.push(snapshot);
+    if (history.length > 30) history.shift();
+    historyIndex = history.length - 1;
+    updateHistory();
+  }
+  queueHistory = () => {
+    if (restoringHistory || !state.source) return;
+    if (historyIndex < 0) { clearTimeout(historyTimer); historyTimer = setTimeout(captureHistory, 0); return; }
+    clearTimeout(historyTimer);
+    historyTimer = setTimeout(captureHistory, 350);
+  };
+  async function travelHistory(delta) {
+    if (restoringHistory) return;
+    captureHistory();
+    const target = historyIndex + delta;
+    if (target < 0 || target >= history.length) return;
+    restoringHistory = true; updateHistory();
+    try {
+      const restored = await loadProject(new File([JSON.stringify(history[target])], 'session-history.json', {type:'application/json'}));
+      if (restored) {
+        historyIndex = target;
+        status(delta < 0 ? 'Edit undone. Redo is available.' : 'Edit redone.');
+      }
+    } finally { restoringHistory = false; updateHistory(); }
+  }
+  $('undoDesign').addEventListener('click', () => travelHistory(-1));
+  $('redoDesign').addEventListener('click', () => travelHistory(1));
+  // Preserve native text-field undo while offering familiar canvas shortcuts.
+  document.addEventListener('keydown', event => {
+    if (!(event.ctrlKey || event.metaKey) || event.altKey || event.target.closest('input,textarea,select,[contenteditable="true"]')) return;
+    const key = event.key.toLowerCase();
+    if (key === 'z' || key === 'y') {
+      event.preventDefault(); travelHistory(key === 'y' || event.shiftKey ? 1 : -1);
+    }
+  });
 
   checkDraft();
   $('aiStatus').textContent=navigator.gpu?'Optional local WebGPU AI available to download, or use rule-based styling now.':window.LanguageModel?'Built-in browser AI may be available.':'Local WebGPU AI unavailable here; rule-based styling works.';
